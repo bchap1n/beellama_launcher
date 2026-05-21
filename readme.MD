@@ -61,6 +61,18 @@ Target models default path uses LM Studio's model directory (`%USERPROFILE%\.lms
 | Qwen3.6-27B-MTP | Q4_K_M, Q4_K_S | MTP, DFlash+MTP | fork | [unsloth](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF) |
 | Qwopus3.5-9B-Coder | BF16 | none | original | [Jackrong](https://huggingface.co/Jackrong/Qwopus3.5-9B-Coder-GGUF) |
 
+### Speculative Decoding Modes Explained
+
+Three distinct configurations are supported. **MTP and DFlash are mutually exclusive per launch** — you cannot use both simultaneously.
+
+| Mode | What it does | `--spec-type` | `--spec-draft-n-max` |
+|------|--------------|---------------|---------------------|
+| **Pure MTP** (`mtp`) | Uses the model's internal Multi-Token Prediction layers to generate draft tokens. No separate drafter model. | *(auto-detected)* | `2` (per Unsloth recommendation) |
+| **DFlash on MTP model** (`dflash+mtp`) | Uses **DFlash** speculation. The MTP layers are present in the model but **inactive**. A separate DFlash drafter handles speculation. | `dflash` | *(unused)* |
+| **Pure DFlash** (`dflash`) | Uses DFlash speculation on a standard model (no MTP layers). Same mechanism as `dflash+mtp`. | `dflash` | *(unused)* |
+
+**Why run `dflash+mtp`?** You may already have the MTP model downloaded, or want to compare DFlash vs MTP performance on the same base model without re-downloading. The MTP architecture does not interfere with DFlash operation — it simply sits unused.
+
 ### DFlash Drafters
 
 DFlash scripts prompt for drafter quant at launch (default: IQ4_XS). Drafters from [Ardenzard/Qwen3.6-27B-DFlash-GGUF](https://huggingface.co/Ardenzard/Qwen3.6-27B-DFlash-GGUF), tuned for single RTX 3090:
