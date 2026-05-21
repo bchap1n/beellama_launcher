@@ -11,6 +11,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP (122k, standard)" -ForegroundCol
   --port $Config.server.port --host $Config.server.host `
   -np 1 `
   --kv-unified `
+  --spec-draft-n-max 2 `
   -ngl all `
   --ctx-size 122800 `
   -b 2048 -ub 256 `

@@ -184,6 +184,13 @@ function pickDrafter {
     param([PSCustomObject]$entry)
     if ($entry.SpecMode -notlike "*dflash*") { return $null }
 
+    # Q5_K_M model only works with Q5_K_M drafter - auto-select
+    if ($entry.Quant -eq "Q5_K_M") {
+        Write-Host ""
+        Write-Host "  DFlash drafter: Q5_K_M (required for Q5_K_M model)" -ForegroundColor DarkCyan
+        return "Q5_K_M"
+    }
+
     Write-Host ""
     Write-Host "  DFlash drafter quant:" -ForegroundColor Yellow
     Write-Host "    [1] IQ4_XS  (default, smallest VRAM)" -ForegroundColor DarkCyan

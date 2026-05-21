@@ -1,16 +1,17 @@
-# Qwen3.6-27B Q5_K_S + DFlash - 64k context, speed-optimized
+# Qwen3.6-27B Q5_K_M + DFlash - 64k context, speed-optimized
 # Best for: maximum decode throughput on Q5
+# Uses Q5_K_M drafter (only compatible drafter for this model)
 # Greedy drafting, no mmproj, Ardenzard-tuned batch/cross-ctx
 param(
-    [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
-    [string]$DrafterQuant = "IQ4_XS"
+    [ValidateSet("Q5_K_M")]
+    [string]$DrafterQuant = "Q5_K_M"
 )
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwen3.6-27B Q5_K_S + DFlash (64k, speed)" -ForegroundColor Green
+Write-Host "Launching: Qwen3.6-27B Q5_K_M + DFlash (64k, speed)" -ForegroundColor Green
 & (Get-ServerBinary -Build "original") `
-  -m $Model["Qwen3.6-27B-Q5_K_S"] `
+  -m $Model["Qwen3.6-27B-Q5_K_M"] `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `

@@ -30,6 +30,7 @@ $ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-G
 # Target models keyed by friendly name
 $Model = @{
     "Qwen3.6-27B-Q4_K_M"       = Join-Path $ModelBase_LmStudio "Qwen3.6-27B-Q4_K_M.gguf"
+    "Qwen3.6-27B-Q5_K_M"       = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q5_K_M.gguf"
     "Qwen3.6-27B-Q5_K_S"       = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q5_K_S.gguf"
     "Qwen3.6-27B-MTP-Q4_K_M"   = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q4_K_M.gguf"
     "Qwen3.6-27B-MTP-Q4_K_S"   = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q4_K_S.gguf"
@@ -122,7 +123,10 @@ function Get-CommonFlags {
         $Flags += "--spec-dflash-cross-ctx", $CrossCtx
         $Flags += "--spec-draft-ngl",       "all"
     }
-    # "mtp": do NOT pass --spec-type — the fork auto-detects MTP layers
+    elseif ($SpecMode -eq "mtp") {
+        # MTP: auto-detected by fork; set draft token count per Unsloth recommendation
+        $Flags += "--spec-draft-n-max", "2"
+    }
     # "none": no speculative decoding flags
 
     # Server + inference flags

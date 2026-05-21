@@ -1,17 +1,17 @@
-# Qwen3.6-27B Q5_K_S + DFlash - 122k context, reasoning ON
-# Best for: precision-sensitive tasks where quality matters more than speed
+# Qwen3.6-27B Q5_K_M + DFlash - 98k context, reasoning ON, VRAM-optimized
+# Best for: Q5 quality + thinking without 122K VRAM pressure
+# Uses Q5_K_M drafter (only compatible drafter for this model)
+# No mmproj for more VRAM headroom, Ardenzard-tuned batch/cross-ctx
 param(
-    [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
-    [string]$DrafterQuant = "IQ4_XS"
+    [ValidateSet("Q5_K_M")]
+    [string]$DrafterQuant = "Q5_K_M"
 )
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwen3.6-27B Q5_K_S + DFlash (122k, reasoning)" -ForegroundColor Green
-& (Get-ServerBinary -Build "original") `
-  -m $Model["Qwen3.6-27B-Q5_K_S"] `
-  --mmproj $MmprojLookup["LmStudio-BF16"] `
-  --no-mmproj-offload `
+Write-Host "Launching: Qwen3.6-27B Q5_K_M + DFlash (98k, reasoning, compact)" -ForegroundColor Green
+& (Get-ServerBinary -Build "fork") `
+  -m $Model["Qwen3.6-27B-Q5_K_M"] `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
@@ -20,7 +20,7 @@ Write-Host "Launching: Qwen3.6-27B Q5_K_S + DFlash (122k, reasoning)" -Foregroun
   -np 1 `
   --kv-unified `
   -ngl all `
-  --ctx-size 122800 `
+  --ctx-size 98304 `
   -b 256 -ub 64 `
   --cache-type-k turbo4 --cache-type-v turbo4 `
   --flash-attn on `
