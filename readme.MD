@@ -52,7 +52,7 @@ archive/                    # Old scripts kept for reference
 
 ## Models
 
-Target models are stored in LM Studio's model directory (`%USERPROFILE%\.lmstudio\models`).
+Target models default path uses LM Studio's model directory (`%USERPROFILE%\.lmstudio\models`). I like using LM Studio to download and manage models, but you can point config.json to any local path.
 
 | Target | Quants | Spec Mode | Binary | Source |
 |--------|--------|-----------|--------|--------|
