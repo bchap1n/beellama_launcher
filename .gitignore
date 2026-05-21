@@ -1,0 +1,36 @@
+# Compressed archives
+*.zip
+*.7z
+
+# secrets
+/.key/
+
+# Source repos (cloned by sources/setup-sources.ps1)
+/sources/
+#oldstuff
+/archive/ 
+
+# Models (managed by LM Studio)
+/models/
+
+# Logs
+/logs/
+/test_logs/
+
+/benchmark/result/
+/benchmark/20*/
+
+# IDE and tool config
+/.qwen/
+/.continue/
+/.windsurf/
+/.claude/
+*.code-workspace
+
+# Private notes
+readme.private.md
+
+# Misc
+/console.error*
+todo.txt
+.last-run.json

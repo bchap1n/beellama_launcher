@@ -1,0 +1,34 @@
+[
+  {
+    "name": "code_binary_search",
+    "type": "Code",
+    "messages": [
+      { "role": "system", "content": "You are a helpful coding assistant." },
+      { "role": "user", "content": "Write a Python function that implements binary search on a sorted list. Include type hints, docstring, and handle edge cases." }
+    ]
+  },
+  {
+    "name": "code_linked_list",
+    "type": "Code",
+    "messages": [
+      { "role": "system", "content": "You are a helpful coding assistant." },
+      { "role": "user", "content": "Implement a singly linked list in Python with insert, delete, search, and reverse methods. Include type hints." }
+    ]
+  },
+  {
+    "name": "reason_math",
+    "type": "Reasoning",
+    "messages": [
+      { "role": "system", "content": "You are a helpful assistant. Think step by step." },
+      { "role": "user", "content": "A train leaves station A at 9:00 AM traveling at 60 mph. Another train leaves station B (300 miles away) at 10:00 AM traveling toward station A at 90 mph. At what time do they meet? Show your work." }
+    ]
+  },
+  {
+    "name": "reason_logic",
+    "type": "Reasoning",
+    "messages": [
+      { "role": "system", "content": "You are a helpful assistant. Think step by step." },
+      { "role": "user", "content": "There are 5 houses in a row, each painted a different color. Each house is occupied by a person of a different nationality. Each person drinks a different beverage, smokes a different brand of cigar, and keeps a different pet. The Brit lives in the red house. The Swede keeps dogs. The Dane drinks tea. The green house is immediately to the left of the white house. The green house owner drinks coffee. The person who smokes Pall Mall keeps birds. The owner of the yellow house smokes Dunhill. The man living in the center house drinks milk. The Norwegian lives in the first house. Who owns the fish?" }
+    ]
+  }
+]

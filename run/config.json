@@ -1,0 +1,13 @@
+{
+  "lmstudioModelsPath": "%USERPROFILE%\\.lmstudio\\models",
+  "binaries": {
+    "fork": "sources\\beellama.cpp_fork\\build\\bin\\llama-server.exe",
+    "original": "sources\\beellama.cpp\\build\\bin\\llama-server.exe",
+    "prebuilt": "prebuilt\\llama-server.exe"
+  },
+  "sourcesDir": "sources",
+  "server": {
+    "port": 8082,
+    "host": "0.0.0.0"
+  }
+}
