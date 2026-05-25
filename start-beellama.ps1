@@ -56,6 +56,8 @@ param(
     [switch]$Benchmark
 )
 
+nvidia-smi -pl 250
+
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RunDir   = Join-Path $RepoRoot "run"
@@ -69,8 +71,20 @@ if (-not (Test-Path $RunDir)) {
 # ---------- Parse script filenames ----------
 # Convention: {Model}-{Quant}-{SpecMode}[-modifier].ps1
 # Examples:   Qwen3.6-27B-Q4_K_M-dflash.ps1
-#             Qwen3.6-27B-Q4_K_M-dflash+mtp-reasoning.ps1
+#             Qwen3.6-27B-Q4_K_M-dflash-mtp-reasoning.ps1
 #             Qwopus3.5-9B-Coder-none.ps1
+
+# ---------- Resolve source binary from script content ----------
+function getScriptSource {
+    param([string]$Path)
+    $lines = Get-Content $Path -TotalCount 20 -ErrorAction SilentlyContinue
+    foreach ($line in $lines) {
+        if ($line -match 'Get-ServerBinary\s+-Build\s+"([^"]+)"') {
+            return $Matches[1]
+        }
+    }
+    return "beellama_fork"  # default
+}
 
 function parseScriptName {
     param([string]$FileName)
@@ -78,7 +92,7 @@ function parseScriptName {
     $BaseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
 
     # Known spec modes (order matters — match longest first)
-    $specModes = @("dflash+mtp", "dflash", "mtp", "none")
+    $specModes = @("dflash-mtp", "dflash", "ngram-mtp", "ik-two-stage", "mtp", "none")
     $specMode  = ""
     $modifiers = @()
 
@@ -124,6 +138,7 @@ function parseScriptName {
         SpecMode    = $specMode
         Modifiers   = $modifiers
         Description = $description
+        Source      = getScriptSource $scriptPath
         DisplayName = "$modelName $quant [$specMode$(if ($modifiers) { ' ' + ($modifiers -join ' ') })]"
     }
 }
@@ -132,7 +147,7 @@ function parseScriptName {
 $scripts = Get-ChildItem -Path $RunDir -Filter "*.ps1" |
     ForEach-Object { parseScriptName $_.Name } |
     Where-Object { $_ -ne $null } |
-    Sort-Object -Property SpecMode, Quant, { $_.Modifiers -join "" }, Model
+    Sort-Object -Property Source, SpecMode, Quant, { $_.Modifiers -join "" }, Model
 
 if ($scripts.Count -eq 0) {
     Write-Host "No launch scripts found in $RunDir" -ForegroundColor Red
@@ -151,17 +166,19 @@ function showMenu {
     $index = 1
 
     foreach ($e in $entries) {
-        $group = $e.SpecMode
+        $group = "$($e.Source) - $($e.SpecMode)"
         if ($group -ne $currentGroup) {
             Write-Host ""
-            # Color-code by spec mode
-            $groupColor = switch ($e.SpecMode) {
-                "dflash"     { "Green" }
-                "mtp"        { "Yellow" }
-                "dflash+mtp" { "Magenta" }
-                default      { "Gray" }
+            # Color-code by source
+            $groupColor = switch ($e.Source) {
+                "beellama"        { "Green" }
+                "beellama_fork"   { "Yellow" }
+                "ik_llama"        { "Magenta" }
+                "llama.cpp"       { "Cyan" }
+                "beellama_prebuilt" { "DarkYellow" }
+                default           { "Gray" }
             }
-            Write-Host "  $($e.SpecMode)" -ForegroundColor $groupColor
+            Write-Host "  $group" -ForegroundColor $groupColor
             $currentGroup = $group
         }
 
@@ -184,10 +201,10 @@ function pickDrafter {
     param([PSCustomObject]$entry)
     if ($entry.SpecMode -notlike "*dflash*") { return $null }
 
-    # Q5_K_M model only works with Q5_K_M drafter - auto-select
-    if ($entry.Quant -eq "Q5_K_M") {
+    # Q5 models only work with Q5_K_M drafter - auto-select
+    if ($entry.Quant -like "Q5_K_*") {
         Write-Host ""
-        Write-Host "  DFlash drafter: Q5_K_M (required for Q5_K_M model)" -ForegroundColor DarkCyan
+        Write-Host "  DFlash drafter: Q5_K_M (required for Q5 models)" -ForegroundColor DarkCyan
         return "Q5_K_M"
     }
 
@@ -233,7 +250,7 @@ if ($Benchmark) {
     Write-Host ""
     Write-Host "    [1] Single   - benchmark one configuration" -ForegroundColor White
     Write-Host "    [2] Pair     - benchmark two configurations" -ForegroundColor White
-    Write-Host "    [3] VS       - compare spec modes (dflash vs mtp vs dflash+mtp)" -ForegroundColor White
+    Write-Host "    [3] VS       - compare spec modes (dflash vs mtp vs dflash-mtp)" -ForegroundColor White
     Write-Host ""
     Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
     Write-Host "   q = quit" -ForegroundColor DarkGray
@@ -269,12 +286,12 @@ if ($Benchmark) {
             if ($anyDflash) { $benchDrafter = pickDrafter $anyDflash }
         }
         "3" {
-            # VS: auto-match spec modes for same model+quant+modifiers
-            # Group scripts by Model + Quant + Modifiers, find groups with 2+ spec modes
+            # VS: auto-match spec modes for same source+model+quant+modifiers
+            # Group scripts by Source + Model + Quant + Modifiers, find groups with 2+ spec modes
             $vsGroups = @{}
             foreach ($s in $scripts) {
                 $modKey = if ($s.Modifiers.Count -gt 0) { $s.Modifiers -join "+" } else { "base" }
-                $groupKey = "$($s.Model)|$($s.Quant)|$modKey"
+                $groupKey = "$($s.Source)|$($s.Model)|$($s.Quant)|$modKey"
                 if (-not $vsGroups.ContainsKey($groupKey)) { $vsGroups[$groupKey] = @() }
                 $vsGroups[$groupKey] += $s
             }
@@ -306,11 +323,12 @@ if ($Benchmark) {
             $idx = 1
             foreach ($vg in $validGroups) {
                 $parts = $vg.Key -split "\|"
-                $modelName = $parts[0]
-                $quant     = $parts[1]
-                $modLabel  = $parts[2]
+                $source    = $parts[0]
+                $modelName = $parts[1]
+                $quant     = $parts[2]
+                $modLabel  = $parts[3]
                 $modeList  = ($vg.SpecModes | Sort-Object) -join " vs "
-                $display   = "$modelName $quant"
+                $display   = "$source | $modelName $quant"
                 if ($modLabel -ne "base") { $display += " ($modLabel)" }
 
                 Write-Host ("    [{0,2}] {1,-40} {2}" -f $idx, $display, $modeList) -ForegroundColor DarkCyan

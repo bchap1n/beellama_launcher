@@ -5,10 +5,14 @@
 # secrets
 /.key/
 
-# Source repos (cloned by sources/setup-sources.ps1)
-/sources/
+# Source repos (cloned by sources/setup-sources.ps1) — ignore subdirs, keep root files
+/sources/**/*
+!/sources/*.ps1
+!/sources/*.md
+!/sources/*.txt
 #oldstuff
-/archive/ 
+/run/archive/ 
+/archive/
 
 # Models (managed by LM Studio)
 /models/

@@ -253,7 +253,7 @@ function scrapeMetrics {
 
 function detectSpecMode {
     param([string]$fileName)
-    $modes = @("dflash+mtp", "dflash", "mtp", "none")
+    $modes = @("dflash-mtp", "dflash", "ngram-mtp", "mtp", "none")
     foreach ($m in $modes) {
         if ($fileName -match "-$([regex]::Escape($m))(?:-|$)") { return $m }
     }
@@ -265,7 +265,8 @@ function specModeColor {
     switch ($mode) {
         "dflash"     { return "#3fb950" }
         "mtp"        { return "#d29922" }
-        "dflash+mtp" { return "#bc8cff" }
+        "dflash-mtp" { return "#bc8cff" }
+        "ngram-mtp"  { return "#58a6ff" }
         "none"       { return "#8b949e" }
         default      { return "#58a6ff" }
     }

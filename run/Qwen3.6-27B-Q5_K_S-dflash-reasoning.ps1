@@ -1,17 +1,14 @@
-# Qwen3.6-27B Q4_K_M + DFlash on MTP model - reasoning ON
-# Uses unsloth MTP model + fork build + DFlash drafter
+# Qwen3.6-27B Q5_K_S + DFlash — 122k context, reasoning ON
 param(
-    [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
-    [string]$DrafterQuant = "IQ4_XS"
+    [ValidateSet("Q5_K_M")]
+    [string]$DrafterQuant = "Q5_K_M"
 )
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash+MTP model (131k, reasoning)" -ForegroundColor Green
-& (Get-ServerBinary -Build "fork") `
-  -m $Model["Qwen3.6-27B-MTP-Q4_K_M"] `
-  --mmproj $MmprojLookup["Unsloth-F32"] `
-  --no-mmproj-offload `
+Write-Host "Launching: Qwen3.6-27B Q5_K_S + DFlash (122k, reasoning)" -ForegroundColor Green
+& (Get-ServerBinary -Build "beellama_fork") `
+  -m $Model["Qwen3.6-27B-Q5_K_S"] `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
@@ -20,7 +17,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash+MTP model (131k, reasoning)" 
   -np 1 `
   --kv-unified `
   -ngl all `
-  --ctx-size 131072 `
+  --ctx-size 122800 `
   -b 256 -ub 64 `
   --cache-type-k turbo4 --cache-type-v turbo4 `
   --flash-attn on `

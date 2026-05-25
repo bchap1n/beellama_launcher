@@ -1,9 +1,11 @@
 {
   "lmstudioModelsPath": "%USERPROFILE%\\.lmstudio\\models",
   "binaries": {
-    "fork": "sources\\beellama.cpp_fork\\build\\bin\\llama-server.exe",
-    "original": "sources\\beellama.cpp\\build\\bin\\llama-server.exe",
-    "prebuilt": "prebuilt\\llama-server.exe"
+    "llama.cpp": "sources\\llama.cpp\\build\\bin\\llama-server.exe",
+    "beellama_fork": "sources\\beellama.cpp_fork\\build\\bin\\llama-server.exe",
+    "beellama": "sources\\beellama.cpp\\build\\bin\\llama-server.exe",
+    "beellama_prebuilt": "prebuilt\\llama-server.exe",
+    "ik_llama": "sources\\ik_llama.cpp\\build\\bin\\llama-server.exe"
   },
   "sourcesDir": "sources",
   "server": {

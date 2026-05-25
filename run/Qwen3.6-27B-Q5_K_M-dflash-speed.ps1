@@ -1,7 +1,4 @@
-# Qwen3.6-27B Q5_K_M + DFlash - 64k context, speed-optimized
-# Best for: maximum decode throughput on Q5
-# Uses Q5_K_M drafter (only compatible drafter for this model)
-# Greedy drafting, no mmproj, Ardenzard-tuned batch/cross-ctx
+# Qwen3.6-27B Q5_K_M + DFlash — 64k context, reasoning ON, greedy-draft
 param(
     [ValidateSet("Q5_K_M")]
     [string]$DrafterQuant = "Q5_K_M"
@@ -10,7 +7,7 @@ param(
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q5_K_M + DFlash (64k, speed)" -ForegroundColor Green
-& (Get-ServerBinary -Build "original") `
+& (Get-ServerBinary -Build "beellama_fork") `
   -m $Model["Qwen3.6-27B-Q5_K_M"] `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
@@ -31,6 +28,6 @@ Write-Host "Launching: Qwen3.6-27B Q5_K_M + DFlash (64k, speed)" -ForegroundColo
   --no-mmap --mlock `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
-  --reasoning off `
-  --chat-template-kwargs '{"preserve_thinking":false}' `
+  --reasoning on `
+  --chat-template-kwargs '{"preserve_thinking":true}' `
   --temp 0.7 --top-p 0.80 --top-k 20 --min-p 0.0

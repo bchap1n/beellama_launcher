@@ -1,6 +1,4 @@
-# Qwen3.6-27B Q5_K_M + DFlash - 122k context, reasoning ON
-# Best for: precision-sensitive tasks where quality matters more than speed
-# Uses Q5_K_M drafter (only compatible drafter for this model)
+# Qwen3.6-27B Q5_K_M + DFlash — 122k context, reasoning ON, mmproj
 param(
     [ValidateSet("Q5_K_M")]
     [string]$DrafterQuant = "Q5_K_M"
@@ -9,7 +7,7 @@ param(
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q5_K_M + DFlash (122k, reasoning)" -ForegroundColor Green
-& (Get-ServerBinary -Build "fork") `
+& (Get-ServerBinary -Build "beellama_fork") `
   -m $Model["Qwen3.6-27B-Q5_K_M"] `
   --mmproj $MmprojLookup["Unsloth-F32"] `
   --no-mmproj-offload `

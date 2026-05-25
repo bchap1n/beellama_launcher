@@ -1,5 +1,4 @@
-# Qwen3.6-27B Q4_K_M + DFlash - 131k context, reasoning ON
-# Best for: reasoning with 3090-optimized DFlash (Ardenzard tuning)
+# Qwen3.6-27B Q4_K_M + DFlash — 131k context, reasoning ON
 param(
     [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
     [string]$DrafterQuant = "IQ4_XS"
@@ -8,10 +7,8 @@ param(
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, reasoning)" -ForegroundColor Green
-& (Get-ServerBinary -Build "original") `
+& (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwen3.6-27B-Q4_K_M"] `
-  --mmproj $MmprojLookup["LmStudio-BF16"] `
-  --no-mmproj-offload `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `

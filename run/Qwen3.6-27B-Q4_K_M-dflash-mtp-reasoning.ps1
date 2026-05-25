@@ -1,6 +1,4 @@
-# Qwen3.6-27B Q4_K_M + DFlash on MTP model - DFlash speculation with MTP-capable model
-# Uses unsloth MTP model + fork build + DFlash drafter
-# The MTP layers are present but DFlash handles speculation
+# Qwen3.6-27B Q4_K_M + DFlash on MTP — 131k context, reasoning ON`
 param(
     [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
     [string]$DrafterQuant = "IQ4_XS"
@@ -8,11 +6,9 @@ param(
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash+MTP model (131k, standard)" -ForegroundColor Green
-& (Get-ServerBinary -Build "fork") `
+Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash+MTP model (131k, reasoning)" -ForegroundColor Green
+& (Get-ServerBinary -Build "beellama_fork") `
   -m $Model["Qwen3.6-27B-MTP-Q4_K_M"] `
-  --mmproj $MmprojLookup["Unsloth-F32"] `
-  --no-mmproj-offload `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
@@ -30,6 +26,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash+MTP model (131k, standard)" -
   --no-mmap --mlock `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
-  --reasoning off `
-  --chat-template-kwargs '{"preserve_thinking":false}' `
-  --temp 0.7 --top-p 0.80 --top-k 20 --min-p 0.0
+  --reasoning on `
+  --chat-template-kwargs '{"preserve_thinking":true}' `
+  --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+

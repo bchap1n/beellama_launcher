@@ -1,10 +1,9 @@
-# Qwen3.6-27B Q4_K_M + MTP — auto-detected multi-token prediction
-# Uses unsloth MTP model + fork build; no explicit --spec-type needed
+# Qwen3.6-27B Q4_K_M + MTP — 122k context, reasoning OFF, mmproj
 
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP (122k, standard)" -ForegroundColor Green
-& (Get-ServerBinary -Build "fork") `
+& (Get-ServerBinary -Build "beellama_fork") `
   -m $Model["Qwen3.6-27B-MTP-Q4_K_M"] `
   --mmproj $MmprojLookup["Unsloth-F32"] `
   --no-mmproj-offload `

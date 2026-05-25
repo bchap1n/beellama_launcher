@@ -25,6 +25,7 @@ $LmStudioModels = [Environment]::ExpandEnvironmentVariables($Config.lmstudioMode
 $ModelBase_LmStudio  = Join-Path $LmStudioModels "lmstudio-community\Qwen3.6-27B-GGUF"
 $ModelBase_Unsloth   = Join-Path $LmStudioModels "unsloth\Qwen3.6-27B-MTP-GGUF"
 $ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-GGUF"
+$ModelBase_Ubergarm  = Join-Path $LmStudioModels "ubergarm\Qwen3.6-27B-GGUF"
 
 # ---------- Model catalog ----------
 # Target models keyed by friendly name
@@ -34,7 +35,10 @@ $Model = @{
     "Qwen3.6-27B-Q5_K_S"       = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q5_K_S.gguf"
     "Qwen3.6-27B-MTP-Q4_K_M"   = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q4_K_M.gguf"
     "Qwen3.6-27B-MTP-Q4_K_S"   = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q4_K_S.gguf"
-    "Qwopus3.5-9B-Coder"       = Join-Path $LmStudioModels "Jackrong\Qwopus3.5-9B-Coder-GGUF\Qwopus3.5-9B-coder-Exp-BF16.gguf"
+    "Qwopus3.5-9B-Coder"            = Join-Path $LmStudioModels "Jackrong\Qwopus3.5-9B-Coder-GGUF\Qwopus3.5-9B-coder-Exp-BF16.gguf"
+    "Qwopus3.6-27B-v2-MTP-Q4_K_M"  = Join-Path $LmStudioModels "Jackrong\Qwopus3.6-27B-v2-MTP-GGUF\Qwopus3.6-27B-v2-MTP-Q4_K_M.gguf"
+    # ubergarm IQK quants (ik_llama optimized) — club-3090 verified
+    "Qwen3.6-27B-MTP-IQ4_KS"      = Join-Path $LmStudioModels "ubergarm\Qwen3.6-27B-GGUF\Qwen3.6-27B-MTP-IQ4_KS.gguf"
 }
 
 # DFlash draft models
@@ -53,11 +57,10 @@ $MmprojLookup = @{
 
 # ---------- Binary resolution ----------
 # Picks the right llama-server.exe based on build type.
-# DFlash-only configs use "original"; MTP/fork configs use "fork"; fallback to "prebuilt".
 function Get-ServerBinary {
     param(
-        [ValidateSet("fork", "original", "prebuilt")]
-        [string]$Build = "fork"
+        [ValidateSet("beellama_fork", "beellama", "beellama_prebuilt", "ik_llama", "llama.cpp")]
+        [string]$Build = "beellama_fork"
     )
 
     $RelPath  = $Config.binaries.$Build
@@ -68,7 +71,7 @@ function Get-ServerBinary {
     }
 
     # Fallback: try each binary in priority order
-    foreach ($b in @("fork", "original", "prebuilt")) {
+    foreach ($b in @("beellama_fork", "beellama", "beellama_prebuilt", "ik_llama")) {
         $p = Join-Path $RepoRoot ($Config.binaries.$b)
         if (Test-Path $p) {
             Write-Warning "Preferred build '$Build' not found. Falling back to '$b'."
@@ -76,7 +79,7 @@ function Get-ServerBinary {
         }
     }
 
-    Write-Error "No llama-server.exe found. Run sources\setup-sources.ps1 and build, or place a prebuilt binary under prebuilt\."
+    Write-Error "No llama-server.exe found. Run sources\setup-sources.ps1 and build, or place a prebuilt binary under prebuilt\ (beellama_prebuilt)."
     exit 1
 }
 

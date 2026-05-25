@@ -1,6 +1,4 @@
-# Qwen3.6-27B Q4_K_M + DFlash - 131k context, speed-optimized
-# Best for: maximum decode throughput on Q4, 3090-optimized
-# Uses turbo4/turbo4 KV, IQ4_XS drafter, small cross-ctx (Ardenzard tuning)
+# Qwen3.6-27B Q4_K_M + DFlash — 131k context, reasoning OFF, mmproj, greedy-draft
 param(
     [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
     [string]$DrafterQuant = "IQ4_XS"
@@ -9,7 +7,7 @@ param(
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, speed)" -ForegroundColor Green
-& (Get-ServerBinary -Build "original") `
+& (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwen3.6-27B-Q4_K_M"] `
   --mmproj $MmprojLookup["LmStudio-BF16"] `
   --no-mmproj-offload `
@@ -17,6 +15,8 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, speed)" -ForegroundCol
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
   --spec-draft-ngl all `
+  --spec-draft-temp 0 `
+  --no-spec-dm-adaptive `
   --port $Config.server.port --host $Config.server.host `
   -np 1 `
   --kv-unified `
