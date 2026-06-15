@@ -56,7 +56,7 @@ param(
     [switch]$Benchmark
 )
 
-nvidia-smi -pl 250
+nvidia-smi -pl 370
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -77,7 +77,7 @@ if (-not (Test-Path $RunDir)) {
 # ---------- Resolve source binary from script content ----------
 function getScriptSource {
     param([string]$Path)
-    $lines = Get-Content $Path -TotalCount 20 -ErrorAction SilentlyContinue
+    $lines = Get-Content $Path -TotalCount 80 -ErrorAction SilentlyContinue
     foreach ($line in $lines) {
         if ($line -match 'Get-ServerBinary\s+-Build\s+"([^"]+)"') {
             return $Matches[1]
@@ -147,7 +147,7 @@ function parseScriptName {
 $scripts = Get-ChildItem -Path $RunDir -Filter "*.ps1" |
     ForEach-Object { parseScriptName $_.Name } |
     Where-Object { $_ -ne $null } |
-    Sort-Object -Property Source, SpecMode, Quant, { $_.Modifiers -join "" }, Model
+    Sort-Object -Property Source, SpecMode, Model, Quant, { $_.Modifiers -join "" }
 
 if ($scripts.Count -eq 0) {
     Write-Host "No launch scripts found in $RunDir" -ForegroundColor Red
@@ -183,10 +183,9 @@ function showMenu {
         }
 
         $modStr = if ($e.Modifiers.Count -gt 0) { " ($($e.Modifiers -join ', '))" } else { "" }
-        $label  = "$($e.Quant)$modStr"
-        if ($e.Model -ne "Qwen3.6-27B") { $label = "$($e.Model) $label" }
+        $label  = "$($e.Model) $($e.Quant)$modStr"
 
-        Write-Host ("    [{0,2}] {1,-30} {2}" -f $index, $label, $e.Description) -ForegroundColor DarkCyan
+        Write-Host ("    [{0,2}] {1,-50} {2}" -f $index, $label, $e.Description) -ForegroundColor DarkCyan
         $index++
     }
 
@@ -201,22 +200,13 @@ function pickDrafter {
     param([PSCustomObject]$entry)
     if ($entry.SpecMode -notlike "*dflash*") { return $null }
 
-    # Q5 models only work with Q5_K_M drafter - auto-select
-    if ($entry.Quant -like "Q5_K_*") {
-        Write-Host ""
-        Write-Host "  DFlash drafter: Q5_K_M (required for Q5 models)" -ForegroundColor DarkCyan
-        return "Q5_K_M"
-    }
-
     Write-Host ""
     Write-Host "  DFlash drafter quant:" -ForegroundColor Yellow
     Write-Host "    [1] IQ4_XS  (default, smallest VRAM)" -ForegroundColor DarkCyan
     Write-Host "    [2] Q4_K_M" -ForegroundColor DarkCyan
-    Write-Host "    [3] Q5_K_M" -ForegroundColor DarkCyan
-    $sel = Read-Host "  Select drafter [1-3] (Enter = IQ4_XS)"
+    $sel = Read-Host "  Select drafter [1-2] (Enter = IQ4_XS)"
     switch ($sel) {
         "2" { return "Q4_K_M" }
-        "3" { return "Q5_K_M" }
         default { return "IQ4_XS" }
     }
 }

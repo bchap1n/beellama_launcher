@@ -1,4 +1,4 @@
-# Qwen3.6-27B Q4_K_M + MTP — club-3090 tuned: 200K ctx, q4_0 KV, -ub 512, --reasoning-format deepseek
+# 200K ctx, q4_0 KV, b4096/ub512, think OFF, vision, club-3090
 #
 # Optimizations from club-3090 research (noonghunna/club-3090):
 #   -ub 512        Smaller micro-batch avoids activation peaks at high fill (was -ub 256).
@@ -24,14 +24,15 @@
 . "$PSScriptRoot\beellama_common.ps1"
 
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP (club-3090 200K, q4_0 KV)" -ForegroundColor Green
-& (Get-ServerBinary -Build "beellama_fork") `
+& (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwen3.6-27B-MTP-Q4_K_M"] `
   --mmproj $MmprojLookup["Unsloth-F32"] `
   --no-mmproj-offload `
   --port $Config.server.port --host $Config.server.host `
   -np 1 `
   --kv-unified `
-  --spec-draft-n-max 2 `
+  --spec-type draft-mtp `
+  --spec-draft-n-max 6 `
   -ngl all `
   --ctx-size 200000 `
   -b 4096 -ub 512 `

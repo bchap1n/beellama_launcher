@@ -1,14 +1,14 @@
-# Qwen3.6-27B Q4_K_M + DFlash — 131k context, reasoning ON
+# 131K ctx, turbo4 KV, b256/ub64, think ON, temp 1.0
 param(
-    [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
+    [ValidateSet("IQ4_XS","Q4_K_M")]
     [string]$DrafterQuant = "IQ4_XS"
 )
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, reasoning)" -ForegroundColor Green
+Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash (131k, think ON)" -ForegroundColor Green
 & (Get-ServerBinary -Build "beellama") `
-  -m $Model["Qwen3.6-27B-Q4_K_M"] `
+  -m $Model["Qwopus3.6-27B-Coder-Q4_K_M"] `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
@@ -27,5 +27,6 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, reasoning)" -Foregroun
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning on `
+  --reasoning-format deepseek `
   --chat-template-kwargs '{"preserve_thinking":true}' `
-  --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+  --temp 1.0 --top-p 0.95 --min-p 0.0

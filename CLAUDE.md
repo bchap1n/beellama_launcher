@@ -248,3 +248,11 @@ For build troubleshooting, see `sources/BUILD_NOTES.md` (CMake version issues, V
 - Do not commit unless explicitly asked.
 - Do not treat benchmark output from prior runs as current evidence — re-run with exact model, command, hardware, and commit ID.
 - Keep fork-specific changes in `sources/` small and scoped.
+
+## Key third party online resources for tuning local run scripts/config
+
+Important research for tuning local run scripts/config on DFlash beellama.cppp vs MTP on 3090:
+"https://dev.to/ianlpaterson/three-months-of-speed-up-experiments-on-a-3090-ti-autoregressive-dflash-mtp-for-qwen36-27b-59ef"
+
+llama.cpp branch fusing MTP + TurboQuant KV could be useful for work in beellama.cpp_fork\mtp
+"https://github.com/Indras-Mirror/llama.cpp-turboq-mtp"

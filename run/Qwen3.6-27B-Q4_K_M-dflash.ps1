@@ -1,6 +1,6 @@
-# Qwen3.6-27B Q4_K_M + DFlash — 131k context, reasoning OFF, mmproj
+# 131K ctx, turbo4 KV, b256/ub64, think OFF, vision
 param(
-    [ValidateSet("IQ4_XS","Q4_K_M","Q5_K_M")]
+    [ValidateSet("IQ4_XS","Q4_K_M")]
     [string]$DrafterQuant = "IQ4_XS"
 )
 
@@ -9,7 +9,7 @@ param(
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash (131k, standard)" -ForegroundColor Green
 & (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwen3.6-27B-Q4_K_M"] `
-  --mmproj $MmprojLookup["LmStudio-BF16"] `
+  --mmproj $MmprojLookup["Unsloth-F32"] `
   --no-mmproj-offload `
   --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
   --spec-type dflash `
