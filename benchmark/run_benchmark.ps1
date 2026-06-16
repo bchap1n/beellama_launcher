@@ -13,7 +13,7 @@ param(
     [string]$ServerUrl,
     [int]$ServerTimeoutSec,
     [string]$ConfigFile,
-    [string]$DrafterQuant
+    [int]$ConfigCooldownSec
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,15 +21,16 @@ $BenchDir  = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 # ---------- Load config (file defaults, then CLI overrides) ----------
 $defaults = @{
-    runs             = 3
-    maxTokens        = 512
-    warmupRuns       = 3
-    warmupTokens     = 256
-    cooldownSec      = 0
-    retries          = 2
-    serverUrl        = "http://localhost:8082"
-    serverTimeoutSec = 180
-    promptsFile      = "prompts.json"
+    runs               = 3
+    maxTokens          = 512
+    warmupRuns         = 3
+    warmupTokens       = 256
+    cooldownSec        = 0
+    configCooldownSec  = 60
+    retries            = 2
+    serverUrl          = "http://localhost:8082"
+    serverTimeoutSec   = 180
+    promptsFile        = "prompts.json"
 }
 
 $cfgPath = if ($ConfigFile) { $ConfigFile } else { Join-Path $BenchDir "benchmark.config.json" }
@@ -46,15 +47,17 @@ if ($PSBoundParameters.ContainsKey('Runs'))             { $defaults['runs']     
 if ($PSBoundParameters.ContainsKey('MaxTokens'))        { $defaults['maxTokens']        = $MaxTokens }
 if ($PSBoundParameters.ContainsKey('ServerUrl'))         { $defaults['serverUrl']        = $ServerUrl }
 if ($PSBoundParameters.ContainsKey('ServerTimeoutSec'))  { $defaults['serverTimeoutSec'] = $ServerTimeoutSec }
+if ($PSBoundParameters.ContainsKey('ConfigCooldownSec'))  { $defaults['configCooldownSec'] = $ConfigCooldownSec }
 
-$Runs             = $defaults['runs']
-$MaxTokens        = $defaults['maxTokens']
-$WarmupRuns       = $defaults['warmupRuns']
-$WarmupTokens     = $defaults['warmupTokens']
-$CooldownSec      = $defaults['cooldownSec']
-$Retries          = $defaults['retries']
-$ServerUrl        = $defaults['serverUrl']
-$ServerTimeoutSec = $defaults['serverTimeoutSec']
+$Runs              = $defaults['runs']
+$MaxTokens         = $defaults['maxTokens']
+$WarmupRuns        = $defaults['warmupRuns']
+$WarmupTokens      = $defaults['warmupTokens']
+$CooldownSec       = $defaults['cooldownSec']
+$ConfigCooldownSec = $defaults['configCooldownSec']
+$Retries           = $defaults['retries']
+$ServerUrl         = $defaults['serverUrl']
+$ServerTimeoutSec  = $defaults['serverTimeoutSec']
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $OutputDir = Join-Path $BenchDir $timestamp
@@ -102,8 +105,20 @@ function waitForServer {
 }
 
 function stopServer {
-    Get-Process "llama-server" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process "llama-server", "dflash_server" -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 3
+}
+
+# Extract --port from a launch script
+function getScriptPort {
+    param([string]$scriptPath)
+    $lines = Get-Content $scriptPath -TotalCount 60 -ErrorAction SilentlyContinue
+    foreach ($line in $lines) {
+        if ($line -match '--port\s+(\d+)') {
+            return $Matches[1]
+        }
+    }
+    return "8082"  # default fallback
 }
 
 function runPromptStreaming {
@@ -294,7 +309,7 @@ Write-Host "  Configs:    $($Scripts.Count)"
 Write-Host "  Runs:       $Runs"
 Write-Host "  Warmup:     $WarmupRuns x $WarmupTokens tok"
 Write-Host "  MaxTokens:  $MaxTokens"
-Write-Host "  Cooldown:   ${CooldownSec}s"
+Write-Host "  Cooldown:   ${CooldownSec}s (between runs), ${ConfigCooldownSec}s (between configs)"
 Write-Host "  Retries:    $Retries"
 Write-Host "  Output:     $OutputDir"
 Write-Host ""
@@ -316,20 +331,19 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
 
     # Launch server in background with log capture
     Write-Host "  Starting server..." -ForegroundColor Yellow
-    $serverLog = Join-Path $OutputDir "$configName.log"
-    $draftArg = ""
-    if ($DrafterQuant -and $configName -match "dflash") {
-        $draftArg = " -DrafterQuant $DrafterQuant"
-    }
+    $serverLog  = Join-Path $OutputDir "$configName.log"
+    $configPort = getScriptPort $scriptPath
+    $configUrl  = "http://localhost:$configPort"
+
     $serverProc = Start-Process "pwsh.exe" `
-        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"$draftArg" `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
         -PassThru -NoNewWindow `
         -RedirectStandardOutput $serverLog `
         -RedirectStandardError (Join-Path $OutputDir "$configName.err.log")
 
     # Wait for health
-    Write-Host "  Waiting for server (up to ${ServerTimeoutSec}s)..." -ForegroundColor Yellow
-    if (-not (waitForServer -url $ServerUrl -timeoutSec $ServerTimeoutSec)) {
+    Write-Host "  Waiting for server on port $configPort (up to ${ServerTimeoutSec}s)..." -ForegroundColor Yellow
+    if (-not (waitForServer -url $configUrl -timeoutSec $ServerTimeoutSec)) {
         Write-Warning "  Server failed to start for: $configName - skipping."
         Write-Warning "  Check logs: $serverLog"
         if (Test-Path $serverLog) {
@@ -350,7 +364,7 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
     Write-Host "  Warmup ($WarmupRuns runs x $($prompts.Count) prompts @ $WarmupTokens tok)..." -ForegroundColor Yellow
     for ($w = 1; $w -le $WarmupRuns; $w++) {
         foreach ($p in $prompts) {
-            $null = runPromptWithRetry -prompt $p -url $ServerUrl -maxTokens $WarmupTokens -retries 1
+            $null = runPromptWithRetry -prompt $p -url $configUrl -maxTokens $WarmupTokens -retries 1
         }
     }
     Write-Host "  Warmup done." -ForegroundColor Green
@@ -359,7 +373,7 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
     for ($run = 1; $run -le $Runs; $run++) {
         Write-Host "  --- Run $run/$Runs ---" -ForegroundColor DarkCyan
         foreach ($p in $prompts) {
-            $result = runPromptWithRetry -prompt $p -url $ServerUrl -maxTokens $MaxTokens -retries $Retries
+            $result = runPromptWithRetry -prompt $p -url $configUrl -maxTokens $MaxTokens -retries $Retries
             if ($result) {
                 $result | Add-Member -NotePropertyName "Run"    -NotePropertyValue $run
                 $result | Add-Member -NotePropertyName "Config" -NotePropertyValue $configName
@@ -377,13 +391,20 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
 
     # Scrape server metrics before stopping
     $metricsFile = Join-Path $OutputDir "$configName.metrics.txt"
-    $null = scrapeMetrics -url $ServerUrl -outPath $metricsFile
+    $null = scrapeMetrics -url $configUrl -outPath $metricsFile
 
     # Stop server
     Write-Host "  Stopping server..." -ForegroundColor Yellow
     stopServer
     if (-not $serverProc.HasExited) { $serverProc | Stop-Process -Force -ErrorAction SilentlyContinue }
     Write-Host "  Server stopped." -ForegroundColor Green
+
+    # Cooldown between configs — gives GPU time to shed heat before next model loads.
+    # Critical for single-GPU VS runs where back-to-back configs cause thermal throttling.
+    if ($ci -lt $Scripts.Count - 1 -and $ConfigCooldownSec -gt 0) {
+        Write-Host "  Cooling down (${ConfigCooldownSec}s)..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds $ConfigCooldownSec
+    }
     Write-Host ""
 }
 
