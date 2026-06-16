@@ -1,4 +1,4 @@
-# 200K ctx, q4_0 KV, think OFF, temp 0.6
+# 131K ctx, q4_0 KV, think OFF, temp 0.6
 #
 # Qwopus3.6-27B-Coder (Jackrong) — agentic coding fine-tune via Claude Opus Trace Inversion.
 # Scored 67% on SWE-bench verified (full 500) with think disabled at Q5_K_M on 5090.
@@ -19,8 +19,6 @@
 #     -ub 512 is the max-safe single-card value for activation-peak survival at high fill.
 #     At 131K ctx this is safe; higher ctx would need -ub lower (club-3090: -ub 1024 at 131K,
 #     -ub 512 at 200K). Ian's -ub 256 at 131K is also valid (+186 MiB vs defaults).
-#   - 131072 context — safe for 250 W 3090. Club-3090 runs 200K on 370 W cards. Our power-limited
-#     card has less thermal headroom; 131K leaves comfortable margin.
 #   - Reasoning OFF — this model was validated at 67% SWE-bench with think disabled
 #   - temp 0.6 — conservative for deterministic coding; raise to 0.9-1.0 for design tasks
 #   - Uses beellama binary (beellama.cpp main build)
@@ -44,7 +42,7 @@ Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + MTP (131k, think OFF)" -Fore
   -np 1 `
   --kv-unified `
   -ngl all `
-  --ctx-size 200000 `
+  --ctx-size 131072 `
   -b 4096 -ub 512 `
   --cache-type-k q4_0 --cache-type-v q4_0 `
   --flash-attn on `

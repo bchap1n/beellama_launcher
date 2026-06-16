@@ -8,7 +8,7 @@
 
 Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP + think (club-3090 200K, q4_0 KV)" -ForegroundColor Green
 & (Get-ServerBinary -Build "beellama") `
-  -m $Model["Qwen3.6-27B-MTP-Q4_K_M"] `
+  -m $Model["Qwen3.6-27B-Q4_K_M"] `
   --mmproj $MmprojLookup["Unsloth-F32"] `
   --no-mmproj-offload `
   --port $Config.server.port --host $Config.server.host `

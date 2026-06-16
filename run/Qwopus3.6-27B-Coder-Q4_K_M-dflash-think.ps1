@@ -1,15 +1,11 @@
 # 131K ctx, turbo4 KV, b256/ub64, think ON, temp 1.0
-param(
-    [ValidateSet("IQ4_XS","Q4_K_M")]
-    [string]$DrafterQuant = "IQ4_XS"
-)
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash (131k, think ON)" -ForegroundColor Green
+Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash IQ4_XS (131k, think ON)" -ForegroundColor Green
 & (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwopus3.6-27B-Coder-Q4_K_M"] `
-  --spec-draft-model $Drafter["DFlash-$DrafterQuant"] `
+  --spec-draft-model $Drafter["DFlash-IQ4_XS"] `
   --spec-type dflash `
   --spec-dflash-cross-ctx 256 `
   --spec-draft-ngl all `
