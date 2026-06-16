@@ -1,4 +1,4 @@
-# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 0, think OFF
+# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 2048, think OFF
 # Source: lucebox
 # Target: unsloth/Qwen3.6-27B-GGUF (non-MTP, DeltaNet layers)
 # Draft:  Lucebox/Qwen3.6-27B-DFlash-GGUF (dflash-draft-3.6-q4_k_m.gguf)
@@ -24,7 +24,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + LuceBox DFlash (131k, TQ3 KV, port 8
   $Model["Qwen3.6-27B-Q4_K_M-DeltaNet"] `
   --draft $Drafter["LuceBox-Qwen-DFlash"] `
   --ddtree --ddtree-budget 22 `
-  --fa-window 0 `
+  --fa-window 2048 `
   --draft-swa 2048 `
   --port 8082 --host 127.0.0.1 `
   --max-ctx 131072 `

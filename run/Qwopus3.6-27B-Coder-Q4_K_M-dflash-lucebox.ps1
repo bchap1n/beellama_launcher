@@ -1,4 +1,4 @@
-# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 0, think OFF
+# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 2048, think OFF
 # Source: lucebox
 # Target: jackrong/Qwopus3.6-27B-Coder-Q4_K_M (non-MTP, DeltaNet, block_count=65)
 # Draft:  Lucebox/Qwen3.6-27B-DFlash-GGUF (dflash-draft-3.6-q4_k_m.gguf)
@@ -22,7 +22,7 @@ Write-Host "Launching: Qwopus Coder + LuceBox DFlash (131k, TQ3 KV, port 8080)" 
   $Model["Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet"] `
   --draft $Drafter["LuceBox-Qwen-DFlash"] `
   --ddtree --ddtree-budget 22 `
-  --fa-window 0 `
+  --fa-window 2048 `
   --draft-swa 2048 `
   --port 8080 --host 0.0.0.0 `
   --max-ctx 131072 `
