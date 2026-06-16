@@ -7,12 +7,11 @@
     decoding mode (DFlash, MTP, DFlash+MTP, none), and presents a numbered
     menu sorted by quant within each group.
 
-    DFlash configurations prompt for drafter quant (IQ4_XS, Q4_K_M, Q5_K_M)
-    after selection. The choice and script are saved so they can be replayed
-    instantly with -Rerun.
+    The choice and script are saved so they can be replayed instantly with
+    -Rerun.
 
-    Benchmark mode delegates to benchmark/run_benchmark.ps1 and supports
-    single-config, paired, and VS (spec-mode comparison) runs.
+    Benchmark mode delegates to benchmark/run_benchmark.ps1 after
+    selecting configurations via comma-separated index list.
 
 .PARAMETER List
     Print the configuration menu and exit without launching.
@@ -23,12 +22,12 @@
     selection exists or the saved script has been removed.
 
 .PARAMETER Benchmark
-    Enter benchmark mode. Presents sub-menu to choose Single, Pair,
-    or VS comparison, then hands off to the benchmark orchestrator.
+    Enter benchmark mode. Shows the menu and accepts comma-separated
+    indices (e.g. "1,4,9") to select configurations to benchmark.
 
 .EXAMPLE
     .\start-beellama.ps1
-    # Interactive menu — pick a config, choose drafter, launch.
+    # Interactive menu — pick a config, launch.
 
 .EXAMPLE
     .\start-beellama.ps1 -Rerun
@@ -40,7 +39,7 @@
 
 .EXAMPLE
     .\start-beellama.ps1 -Benchmark
-    # Enter benchmark mode (Single / Pair / VS).
+    # Show menu, then enter e.g. "1,4,9" to benchmark three configs.
 
 .LINK
     https://github.com/bchap1n/beellama_launcher
@@ -56,7 +55,7 @@ param(
     [switch]$Benchmark
 )
 
-nvidia-smi -pl 370
+nvidia-smi -pl 250
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -80,6 +79,9 @@ function getScriptSource {
     $lines = Get-Content $Path -TotalCount 80 -ErrorAction SilentlyContinue
     foreach ($line in $lines) {
         if ($line -match 'Get-ServerBinary\s+-Build\s+"([^"]+)"') {
+            return $Matches[1]
+        }
+        if ($line -match '# Source:\s*(\S+)') {
             return $Matches[1]
         }
     }
@@ -176,6 +178,7 @@ function showMenu {
                 "ik_llama"        { "Magenta" }
                 "llama.cpp"       { "Cyan" }
                 "beellama_prebuilt" { "DarkYellow" }
+                "lucebox"         { "Blue" }
                 default           { "Gray" }
             }
             Write-Host "  $group" -ForegroundColor $groupColor
@@ -193,22 +196,6 @@ function showMenu {
     Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
     Write-Host "   q = quit" -ForegroundColor DarkGray
     Write-Host ""
-}
-
-# ---------- Shared: prompt for DFlash drafter quant ----------
-function pickDrafter {
-    param([PSCustomObject]$entry)
-    if ($entry.SpecMode -notlike "*dflash*") { return $null }
-
-    Write-Host ""
-    Write-Host "  DFlash drafter quant:" -ForegroundColor Yellow
-    Write-Host "    [1] IQ4_XS  (default, smallest VRAM)" -ForegroundColor DarkCyan
-    Write-Host "    [2] Q4_K_M" -ForegroundColor DarkCyan
-    $sel = Read-Host "  Select drafter [1-2] (Enter = IQ4_XS)"
-    switch ($sel) {
-        "2" { return "Q4_K_M" }
-        default { return "IQ4_XS" }
-    }
 }
 
 # ---------- Shared: pick one script from numbered list ----------
@@ -234,139 +221,47 @@ if ($Benchmark) {
         exit 1
     }
 
-    Write-Host ""
-    Write-Host "  beeLLama Benchmark Mode" -ForegroundColor Cyan
-    Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "    [1] Single   - benchmark one configuration" -ForegroundColor White
-    Write-Host "    [2] Pair     - benchmark two configurations" -ForegroundColor White
-    Write-Host "    [3] VS       - compare spec modes (dflash vs mtp vs dflash-mtp)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
-    Write-Host "   q = quit" -ForegroundColor DarkGray
+    showMenu $scripts
+
+    Write-Host "  Benchmark: pick 1–4 configs (comma-separated, in run order)" -ForegroundColor Cyan
+    Write-Host "  Example: 1,4,9   or   1, 4, 3, 9" -ForegroundColor DarkGray
     Write-Host ""
 
-    $mode = Read-Host "  Select mode [1-3]"
-    if ($mode -eq "q" -or $mode -eq "Q") { exit 0 }
+    $raw = Read-Host "  Select [1-$($scripts.Count)]"
+    if ($raw -eq "q" -or $raw -eq "Q") { exit 0 }
 
+    # Parse comma-separated indices
     $benchScripts = @()
-    $benchDrafter = $null
-
-    switch ($mode) {
-        "1" {
-            # Single: pick one
-            showMenu $scripts
-            $pick = pickScript "  Select configuration [1-$($scripts.Count)]"
-            if (-not $pick) { exit 0 }
-            $benchDrafter = pickDrafter $pick
-            $benchScripts = @($pick.Path)
-        }
-        "2" {
-            # Pair: pick two
-            showMenu $scripts
-            Write-Host "  Pick first configuration:" -ForegroundColor Yellow
-            $pickA = pickScript "  Config A [1-$($scripts.Count)]"
-            if (-not $pickA) { exit 0 }
-            Write-Host "  Pick second configuration:" -ForegroundColor Yellow
-            $pickB = pickScript "  Config B [1-$($scripts.Count)]"
-            if (-not $pickB) { exit 0 }
-            $benchScripts = @($pickA.Path, $pickB.Path)
-            # Prompt for drafter if either config is DFlash
-            $anyDflash = @($pickA, $pickB) | Where-Object { $_.SpecMode -like "*dflash*" } | Select-Object -First 1
-            if ($anyDflash) { $benchDrafter = pickDrafter $anyDflash }
-        }
-        "3" {
-            # VS: auto-match spec modes for same source+model+quant+modifiers
-            # Group scripts by Source + Model + Quant + Modifiers, find groups with 2+ spec modes
-            $vsGroups = @{}
-            foreach ($s in $scripts) {
-                $modKey = if ($s.Modifiers.Count -gt 0) { $s.Modifiers -join "+" } else { "base" }
-                $groupKey = "$($s.Source)|$($s.Model)|$($s.Quant)|$modKey"
-                if (-not $vsGroups.ContainsKey($groupKey)) { $vsGroups[$groupKey] = @() }
-                $vsGroups[$groupKey] += $s
-            }
-
-            # Filter to groups with 2+ different spec modes
-            $validGroups = @()
-            foreach ($key in $vsGroups.Keys) {
-                $group = $vsGroups[$key]
-                $specModes = $group | Select-Object -ExpandProperty SpecMode -Unique
-                if ($specModes.Count -ge 2) {
-                    $validGroups += [PSCustomObject]@{
-                        Key       = $key
-                        Scripts   = $group
-                        SpecModes = $specModes
-                    }
-                }
-            }
-
-            if ($validGroups.Count -eq 0) {
-                Write-Host "  No model+quant combos found with multiple spec modes." -ForegroundColor Red
-                exit 1
-            }
-
-            Write-Host ""
-            Write-Host "  VS Comparisons Available" -ForegroundColor Cyan
-            Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
-            Write-Host ""
-
-            $idx = 1
-            foreach ($vg in $validGroups) {
-                $parts = $vg.Key -split "\|"
-                $source    = $parts[0]
-                $modelName = $parts[1]
-                $quant     = $parts[2]
-                $modLabel  = $parts[3]
-                $modeList  = ($vg.SpecModes | Sort-Object) -join " vs "
-                $display   = "$source | $modelName $quant"
-                if ($modLabel -ne "base") { $display += " ($modLabel)" }
-
-                Write-Host ("    [{0,2}] {1,-40} {2}" -f $idx, $display, $modeList) -ForegroundColor DarkCyan
-                $idx++
-            }
-
-            Write-Host ""
-            Write-Host "  $('=' * 40)" -ForegroundColor DarkGray
-            Write-Host "   q = quit" -ForegroundColor DarkGray
-            Write-Host ""
-
-            $vsSel = Read-Host "  Select comparison [1-$($validGroups.Count)]"
-            if ($vsSel -eq "q" -or $vsSel -eq "Q") { exit 0 }
-            $vsNum = 0
-            if (-not [int]::TryParse($vsSel, [ref]$vsNum) -or $vsNum -lt 1 -or $vsNum -gt $validGroups.Count) {
-                Write-Host "Invalid selection: $vsSel" -ForegroundColor Red
-                exit 1
-            }
-
-            $chosen = $validGroups[$vsNum - 1]
-            $benchScripts = $chosen.Scripts | Sort-Object SpecMode | ForEach-Object { $_.Path }
-
-            # Prompt for drafter if any config is DFlash
-            $anyDflash = $chosen.Scripts | Where-Object { $_.SpecMode -like "*dflash*" } | Select-Object -First 1
-            if ($anyDflash) { $benchDrafter = pickDrafter $anyDflash }
-
-            Write-Host ""
-            Write-Host "  Will benchmark $($benchScripts.Count) configs:" -ForegroundColor Green
-            foreach ($bp in $benchScripts) {
-                Write-Host "    - $([System.IO.Path]::GetFileNameWithoutExtension($bp))" -ForegroundColor Cyan
-            }
-            Write-Host ""
-        }
-        default {
-            Write-Host "Invalid mode: $mode" -ForegroundColor Red
+    foreach ($token in ($raw -split ",")) {
+        $t = $token.Trim()
+        if ($t -eq "") { continue }
+        $num = 0
+        if (-not [int]::TryParse($t, [ref]$num) -or $num -lt 1 -or $num -gt $scripts.Count) {
+            Write-Host "  Invalid index: '$t'" -ForegroundColor Red
             exit 1
         }
+        $benchScripts += $scripts[$num - 1].Path
     }
 
-    if ($benchScripts.Count -eq 0) {
-        Write-Host "No scripts selected." -ForegroundColor Red
+    $count = $benchScripts.Count
+    if ($count -eq 0) {
+        Write-Host "  No valid selections." -ForegroundColor Red
+        exit 1
+    }
+    if ($count -gt 4) {
+        Write-Host "  Max 4 configs allowed (got $count)." -ForegroundColor Red
         exit 1
     }
 
+    Write-Host ""
+    Write-Host "  Will benchmark $count config$(if ($count -gt 1) {'s'}):" -ForegroundColor Green
+    foreach ($bp in $benchScripts) {
+        Write-Host "    - $([System.IO.Path]::GetFileNameWithoutExtension($bp))" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
     # Launch orchestrator
-    $benchArgs = @{ Scripts = $benchScripts }
-    if ($benchDrafter) { $benchArgs['DrafterQuant'] = $benchDrafter }
-    & $BenchScript @benchArgs
+    & $BenchScript -Scripts $benchScripts
     exit 0
 }
 
@@ -386,19 +281,13 @@ if ($Rerun) {
         Write-Host "Last script '$($last.fileName)' no longer exists in $RunDir" -ForegroundColor Red
         exit 1
     }
-    $drafterQ = $last.drafterQuant
 
     Write-Host ""
     Write-Host "  Rerun: $($chosen.DisplayName)" -ForegroundColor Green
-    Write-Host "  Script:  $($chosen.Path)" -ForegroundColor Cyan
-    if ($drafterQ) { Write-Host "  Drafter: DFlash-$drafterQ" -ForegroundColor Cyan }
+    Write-Host "  Script: $($chosen.Path)" -ForegroundColor Cyan
     Write-Host ""
 
-    if ($drafterQ) {
-        & $chosen.Path -DrafterQuant $drafterQ
-    } else {
-        & $chosen.Path
-    }
+    & $chosen.Path
     exit 0
 }
 
@@ -413,21 +302,14 @@ if (-not $chosen) {
     exit 0
 }
 
-$drafterQ = pickDrafter $chosen
-
 # ---------- Save selection for -Rerun ----------
-@{ fileName = $chosen.FileName; drafterQuant = $drafterQ } |
+@{ fileName = $chosen.FileName } |
     ConvertTo-Json | Set-Content $LastRunFile -Encoding utf8
 
 Write-Host ""
 Write-Host "  Launching: $($chosen.DisplayName)" -ForegroundColor Green
 Write-Host "  Script:    $($chosen.Path)" -ForegroundColor Cyan
-if ($drafterQ) { Write-Host "  Drafter:   DFlash-$drafterQ" -ForegroundColor Cyan }
 Write-Host ""
 
 # ---------- Launch ----------
-if ($drafterQ) {
-    & $chosen.Path -DrafterQuant $drafterQ
-} else {
-    & $chosen.Path
-}
+& $chosen.Path
