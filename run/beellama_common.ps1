@@ -20,37 +20,37 @@ if (-not (Test-Path $ConfigPath)) {
 $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
 # ---------- Resolve base paths ----------
-$LmStudioModels = [Environment]::ExpandEnvironmentVariables($Config.lmstudioModelsPath)
+$LmStudioModels   = [Environment]::ExpandEnvironmentVariables($Config.lmstudioModelsPath)
+$AltModelsPath    = "D:\.lmstudio\models"       # alternate drive (DeltaNet models, LuceBox drafts)
 
 $ModelBase_Unsloth   = Join-Path $LmStudioModels "unsloth\Qwen3.6-27B-MTP-GGUF"
 $ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-GGUF"
-$ModelBase_Ubergarm  = Join-Path $LmStudioModels "ubergarm\Qwen3.6-27B-GGUF"
 $ModelBase_Jackrong  = Join-Path $LmStudioModels "Jackrong"
 $ModelBase_Gemma     = Join-Path $LmStudioModels "unsloth"
-$ModelBase_LuceBox    = Join-Path $LmStudioModels "Lucebox"
+$ModelBase_LuceBox   = Join-Path $LmStudioModels "Lucebox"
 
 # ---------- Model catalog ----------
 # Target models keyed by friendly name
 $Model = @{
     "Qwen3.6-27B-Q4_K_M"       = Join-Path $ModelBase_Unsloth "Qwen3.6-27B-Q4_K_M.gguf"
-    "Qwen3.6-27B-MTP-Q4_K_M"   = Join-Path $ModelBase_Unsloth  "Qwen3.6-27B-Q4_K_M.gguf"
     # Jackrong Qwopus Coder (agentic coding fine-tune, Claude Opus trace inversion)
     "Qwopus3.6-27B-Coder-Q4_K_M"     = Join-Path $ModelBase_Jackrong "Qwopus3.6-27B-Coder-MTP-GGUF\Qwopus3.6-27B-Coder-MTP-Q4_K_M.gguf"
     # Qwen3.6-27B non-MTP (standard Unsloth, DeltaNet — for LuceBox)
-    "Qwen3.6-27B-Q4_K_M-DeltaNet" = "D:\.lmstudio\models\unsloth\Qwen3.6-27B-Q4_K_M.gguf"
+    "Qwen3.6-27B-Q4_K_M-DeltaNet"         = Join-Path $AltModelsPath "unsloth\Qwen3.6-27B-Q4_K_M.gguf"
+    # Qwopus Coder non-MTP (jackrong, DeltaNet — for LuceBox)
+    "Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet" = Join-Path $AltModelsPath "jackrong\Qwopus3.6-27B-Coder-Q4_K_M.gguf"
     # Gemma 4 (Unsloth GGUFs)
     "Gemma4-12B-UD-Q4_K_XL"           = Join-Path $ModelBase_Gemma "gemma-4-12B-it-qat-GGUF\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
     "Gemma4-31B-QAT-UD-Q4_K_XL"       = Join-Path $ModelBase_Gemma "gemma-4-31B-it-qat-GGUF\gemma-4-31B-it-qat-UD-Q4_K_XL.gguf"
 }
 
-# DFlash draft models
+# DFlash draft models (Ardenzard GGUFs for beellama.cpp DFlash)
 $Drafter = @{
     "DFlash-IQ4_XS" = Join-Path $ModelBase_Ardenzard "Qwen3.6-27B-DFlash-IQ4_XS.gguf"
-    "DFlash-Q4_K_M" = Join-Path $ModelBase_Ardenzard "Qwen3.6-27B-DFlash-Q4_K_M.gguf"
-    # LuceBox Gemma 4 DFlash drafts (lucebox-hub native spec decode)
+    # LuceBox DFlash drafts (lucebox-hub native spec decode)
     "LuceBox-Gemma4-31B-DFlash" = Join-Path $ModelBase_LuceBox "gemma-4-31B-it-DFlash-GGUF\gemma-4-31B-it-DFlash-q8_0.gguf"
     # LuceBox Qwen3.6-27B DFlash draft (non-MTP, for use with unsloth/Qwen3.6-27B-GGUF)
-    "LuceBox-Qwen-DFlash" = "D:\.lmstudio\models\Lucebox\Qwen3.6-27B-DFlash-GGUF\dflash-draft-3.6-q4_k_m.gguf"
+    "LuceBox-Qwen-DFlash" = Join-Path $AltModelsPath "Lucebox\Qwen3.6-27B-DFlash-GGUF\dflash-draft-3.6-q4_k_m.gguf"
 }
 
 # Multimodal projectors
