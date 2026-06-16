@@ -33,8 +33,13 @@
 
 # Private notes
 readme.private.md
+/research/
 
 # Misc
 /console.error*
 todo.txt
 .last-run.json
+/ignore/
+
+#build stuff
+/build_test/
