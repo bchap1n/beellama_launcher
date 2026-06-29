@@ -1,9 +1,9 @@
 # 256K ctx, TQ3 KV, KVFlash auto, chain, SWA 2048, fa-win 2048, think OFF, dense
 # Source: lucebox
-# Target: jackrong/Qwopus3.6-27B-Coder-Q4_K_M (non-MTP)
+# Target: jackrong/Qwopus3.6-27B-Coder-Compat-MTP (replaced old non-MTP with Compat-MTP)
 # Draft:  Lucebox/Qwen3.6-27B-DFlash-GGUF (dflash-draft-3.6-q4_k_m.gguf)
 #
-# Qwopus is an agentic coding fine-tune (Claude Opus trace inversion). Same LuceBox drafter and flags work.
+# Qwopus is an agentic coding fine-tune (Claude Opus trace inversion). Now using Compat-MTP version.
 # 47-68 tok/s, 25-32% DFlash acceptance.
 
 . "$PSScriptRoot\beellama_common.ps1"
