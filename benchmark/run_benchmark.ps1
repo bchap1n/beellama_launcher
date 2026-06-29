@@ -13,7 +13,9 @@ param(
     [string]$ServerUrl,
     [int]$ServerTimeoutSec,
     [string]$ConfigFile,
-    [int]$ConfigCooldownSec
+    [int]$ConfigCooldownSec,
+    [switch]$LongCtx,
+    [switch]$Quality
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,7 +24,7 @@ $BenchDir  = Split-Path -Parent $MyInvocation.MyCommand.Definition
 # ---------- Load config (file defaults, then CLI overrides) ----------
 $defaults = @{
     runs               = 3
-    maxTokens          = 512
+    maxTokens          = 2048
     warmupRuns         = 3
     warmupTokens       = 256
     cooldownSec        = 0
@@ -51,6 +53,8 @@ if ($PSBoundParameters.ContainsKey('ConfigCooldownSec'))  { $defaults['configCoo
 
 $Runs              = $defaults['runs']
 $MaxTokens         = $defaults['maxTokens']
+# Safety: if resolution yields 0, default to 2048 (thinking models need room)
+if ($MaxTokens -le 0) { $MaxTokens = 2048; Write-Warning "MaxTokens was 0, defaulting to 2048" }
 $WarmupRuns        = $defaults['warmupRuns']
 $WarmupTokens      = $defaults['warmupTokens']
 $CooldownSec       = $defaults['cooldownSec']
@@ -62,9 +66,23 @@ $ServerTimeoutSec  = $defaults['serverTimeoutSec']
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $OutputDir = Join-Path $BenchDir $timestamp
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-
 # ---------- Load prompts ----------
-$promptsPath = Join-Path $BenchDir $defaults['promptsFile']
+$promptsFile = $defaults['promptsFile']
+if ($LongCtx) {
+    $promptsFile = "prompts-longctx.json"
+}
+# Quality mode: -Quality flag forces it, otherwise read config
+if (-not $fileCfg.PSObject.Properties["quality"]) { $fileCfg | Add-Member -NotePropertyName "quality" -NotePropertyValue ([PSCustomObject]@{}) -Force }
+if ($Quality) {
+    $fileCfg.quality | Add-Member -NotePropertyName "enabled" -NotePropertyValue $true -Force
+    if (-not $fileCfg.quality.PSObject.Properties["promptsFile"]) {
+        $fileCfg.quality | Add-Member -NotePropertyName "promptsFile" -NotePropertyValue "prompts-coding.json" -Force
+    }
+}
+if ($fileCfg.quality.PSObject.Properties["enabled"] -and $fileCfg.quality.enabled) {
+    $promptsFile = if ($fileCfg.quality.PSObject.Properties["promptsFile"]) { $fileCfg.quality.promptsFile } else { "prompts-coding.json" }
+}
+$promptsPath = Join-Path $BenchDir $promptsFile
 if (Test-Path $promptsPath) {
     $prompts = Get-Content $promptsPath -Raw | ConvertFrom-Json
 } else {
@@ -89,8 +107,23 @@ if (Test-Path $promptsPath) {
     )
 }
 
+# Derive distinct prompt names for per-prompt comparison table
+$promptNames = $prompts | ForEach-Object { $_.name } | Select-Object -Unique
+
 # ---------- Helpers ----------
 
+
+# Always load standard prompts for warmup (long-context warmup would take hours)
+if ($LongCtx) {
+    $warmupPath = Join-Path $BenchDir $defaults['promptsFile']
+    if (Test-Path $warmupPath) {
+        $warmupPrompts = Get-Content $warmupPath -Raw | ConvertFrom-Json
+    } else {
+        $warmupPrompts = $prompts
+    }
+} else {
+    $warmupPrompts = $prompts
+}
 function waitForServer {
     param([string]$url, [int]$timeoutSec)
     $deadline = (Get-Date).AddSeconds($timeoutSec)
@@ -105,7 +138,16 @@ function waitForServer {
 }
 
 function stopServer {
+    param([int]$Port = 8082)
+    # Kill known server process names
     Get-Process "llama-server", "dflash_server" -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Also kill anything listening on the port (catches servers from other sessions)
+    $pids = (& netstat -ano 2>$null | Select-String ":$Port.*LISTENING" | ForEach-Object {
+        ($_ -replace '.*LISTENING\s+(\d+).*','$1').Trim()
+    } | Where-Object { $_ -match '^\d+$' })
+    foreach ($p in $pids) {
+        Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue
+    }
     Start-Sleep -Seconds 3
 }
 
@@ -174,7 +216,22 @@ function runPromptStreaming {
 
             try {
                 $chunk = $data | ConvertFrom-Json
-            } catch { continue }
+            } catch {
+                # Regex fallback: thinking models produce content with characters
+                # that break ConvertFrom-Json (unescaped quotes, backslashes, etc.)
+                $tok = $null
+                if ($data -match '"content"\s*:\s*"((?:[^"\\]|\\.)*)"') {
+                    $tok = [regex]::Unescape($Matches[1])
+                }
+                if (-not $tok -and $data -match '"reasoning_content"\s*:\s*"((?:[^"\\]|\\.)*)"') {
+                    $tok = [regex]::Unescape($Matches[1])
+                }
+                if ($tok) {
+                    if ($ttftMs -lt 0) { $ttftMs = $sw.ElapsedMilliseconds }
+                    $totalContent += $tok
+                }
+                continue
+            }
 
             if ($chunk.choices -and $chunk.choices.Count -gt 0) {
                 $delta = $chunk.choices[0].delta
@@ -209,6 +266,7 @@ function runPromptStreaming {
     }
 
     $ms = $sw.ElapsedMilliseconds
+    $decodeMs = if ($ttftMs -ge 0 -and $ms -gt $ttftMs) { $ms - $ttftMs } else { $ms }
     return [PSCustomObject]@{
         Prompt           = $prompt.name
         Type             = $prompt.type
@@ -217,6 +275,8 @@ function runPromptStreaming {
         WallTimeMs       = $ms
         TTFT_Ms          = if ($ttftMs -ge 0) { $ttftMs } else { $ms }
         TokPerSec        = if ($ms -gt 0) { [math]::Round($completionTokens / ($ms / 1000.0), 2) } else { 0 }
+        DecodeTokPerSec  = if ($decodeMs -gt 0) { [math]::Round($completionTokens / ($decodeMs / 1000.0), 2) } else { 0 }
+        Content          = $totalContent
     }
 }
 
@@ -308,6 +368,8 @@ Write-Host ""
 Write-Host "  Configs:    $($Scripts.Count)"
 Write-Host "  Runs:       $Runs"
 Write-Host "  Warmup:     $WarmupRuns x $WarmupTokens tok"
+$promptMode = if ($LongCtx) { "long-context (~125K tok prefill)" } else { "standard" }
+Write-Host "  Prompts:    $promptMode"
 Write-Host "  MaxTokens:  $MaxTokens"
 Write-Host "  Cooldown:   ${CooldownSec}s (between runs), ${ConfigCooldownSec}s (between configs)"
 Write-Host "  Retries:    $Retries"
@@ -359,11 +421,10 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
         continue
     }
     Write-Host "  Server healthy." -ForegroundColor Green
-
-    # Warmup (discard results)
-    Write-Host "  Warmup ($WarmupRuns runs x $($prompts.Count) prompts @ $WarmupTokens tok)..." -ForegroundColor Yellow
+    # Warmup (discard results, always uses standard prompts)
+    Write-Host "  Warmup ($WarmupRuns runs x $($warmupPrompts.Count) prompts @ $WarmupTokens tok)..." -ForegroundColor Yellow
     for ($w = 1; $w -le $WarmupRuns; $w++) {
-        foreach ($p in $prompts) {
+        foreach ($p in $warmupPrompts) {
             $null = runPromptWithRetry -prompt $p -url $configUrl -maxTokens $WarmupTokens -retries 1
         }
     }
@@ -379,14 +440,14 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
                 $result | Add-Member -NotePropertyName "Config" -NotePropertyValue $configName
                 $result | Add-Member -NotePropertyName "Label"  -NotePropertyValue $label
                 $allResults += $result
-                Write-Host ("    {0,-25} {1,5} tok  {2,8} ms  TTFT {3,6} ms  {4,7} tok/s" -f `
-                    $result.Prompt, $result.CompletionTokens, $result.WallTimeMs, $result.TTFT_Ms, $result.TokPerSec)
+                Write-Host ("    {0,-25} {1,5} tok  {2,8} ms  TTFT {3,6} ms  {4,7} tok/s  {5,7} dec tok/s" -f `
+                    $result.Prompt, $result.CompletionTokens, $result.WallTimeMs, $result.TTFT_Ms, $result.TokPerSec, $result.DecodeTokPerSec)
             }
         }
         if ($CooldownSec -gt 0 -and $run -lt $Runs) {
             Write-Host "    (cooldown ${CooldownSec}s)" -ForegroundColor DarkGray
             Start-Sleep -Seconds $CooldownSec
-        }
+            }
     }
 
     # Scrape server metrics before stopping
@@ -408,41 +469,148 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
     Write-Host ""
 }
 
+# ---------- Quality Analysis (if enabled and Coding prompts present) ----------
+$qualityCfg   = $fileCfg.PSObject.Properties["quality"]
+$qualityMode  = ($qualityCfg -and $qualityCfg.Value.enabled -eq $true)
+$codingResults = @($allResults | Where-Object { $_.Type -eq "Coding" })
+$configs = $allResults | Select-Object -ExpandProperty Config -Unique
+if ($qualityMode -and $codingResults.Count -gt 0) {
+    Write-Host ""
+    Write-Host "  === Quality Analysis (PowerShell static analysis) ===" -ForegroundColor Cyan
+
+    # Load quality module
+    $qaModule = Join-Path $BenchDir "quality_analysis.ps1"
+    if (Test-Path $qaModule) {
+        . $qaModule
+    } else {
+        Write-Warning "Quality module not found: $qaModule"
+        $qualityMode = $false
+    }
+
+    if ($qualityMode) {
+        $qaCfg = $qualityCfg.Value
+        $qaHash = @{
+            enabled          = $qaCfg.enabled
+            timeoutSeconds   = $qaCfg.timeoutSeconds
+            psScriptAnalyzer = @{ severity = @($qaCfg.psScriptAnalyzer.severity) }
+            idiomChecks      = $qaCfg.idiomChecks
+        }
+
+        # Add quality fields to each Coding result
+        foreach ($r in $codingResults) {
+            $qa = Invoke-QualityAnalysis -Code $r.Content -PromptName $r.Prompt -Config $qaHash
+            $r | Add-Member -NotePropertyName "QASyntaxOk"    -NotePropertyValue $qa.SyntaxOk
+            $r | Add-Member -NotePropertyName "QAPSAErrors"   -NotePropertyValue $qa.PSAErrors
+            $r | Add-Member -NotePropertyName "QAPSAWarnings" -NotePropertyValue $qa.PSAWarnings
+            $r | Add-Member -NotePropertyName "QAIdiomScore"  -NotePropertyValue $qa.IdiomScore
+            $r | Add-Member -NotePropertyName "QAGrade"       -NotePropertyValue $qa.Grade
+
+            Write-Host ("    {0,-28} syntax={1}  PSA err={2} warn={3}  idiom={4}%  grade={5}" -f `
+                $r.Prompt, $(if($qa.SyntaxOk){"OK"}else{"FAIL"}), $qa.PSAErrors, $qa.PSAWarnings, $qa.IdiomScore, $qa.Grade)
+        }
+
+        # Per-config quality averages
+        Write-Host ""
+        Write-Host "  --- Per-Config Quality Averages ---" -ForegroundColor DarkYellow
+        foreach ($cfg in $configs) {
+            $cfgCoding = @($codingResults | Where-Object { $_.Config -eq $cfg })
+            if ($cfgCoding.Count -eq 0) { continue }
+
+            $avgIdiom  = [math]::Round(($cfgCoding | Measure-Object -Property QAIdiomScore -Average).Average, 1)
+            $avgPsaErr = [math]::Round(($cfgCoding | Measure-Object -Property QAPSAErrors -Average).Average, 1)
+            $synOk     = ($cfgCoding | Where-Object { $_.QASyntaxOk }).Count
+            $gradeA    = ($cfgCoding | Where-Object { $_.QAGrade -eq "A" }).Count
+
+            Write-Host ("    {0,-40} syntax {1}/{2}  idiom {3}%  PSA err {4}  A-grades {5}/{6}" -f `
+                $cfg, $synOk, $cfgCoding.Count, $avgIdiom, $avgPsaErr, $gradeA, $cfgCoding.Count)
+        }
+
+        # Head-to-head comparison (only when multiple configs)
+        if ($configs.Count -gt 1) {
+            Write-Host ""
+            Write-Host "  === Head-to-Head Quality Comparison ===" -ForegroundColor Cyan
+            Write-Host ("  {0,-30} {1,8} {2,8} {3,8} {4,8} {5}" -f `
+                "Config", "Idiom%", "PSA Err", "Syn OK", "A-Grade", "Wins")
+            Write-Host ("  {0}" -f ("-" * 75))
+
+            # Find best in each category
+            $bestIdiom = ($configs | ForEach-Object {
+                $c = $_; $r = @($codingResults | Where-Object { $_.Config -eq $c })
+                if ($r.Count -eq 0) { return @{C=$c;V=0} }
+                @{C=$c;V=[math]::Round(($r | Measure-Object -Property QAIdiomScore -Average).Average,1)}
+            } | Sort-Object V -Descending | Select-Object -First 1).C
+            $bestPsa = ($configs | ForEach-Object {
+                $c = $_; $r = @($codingResults | Where-Object { $_.Config -eq $c })
+                if ($r.Count -eq 0) { return @{C=$c;V=999} }
+                @{C=$c;V=[math]::Round(($r | Measure-Object -Property QAPSAErrors -Average).Average,1)}
+            } | Sort-Object V | Select-Object -First 1).C
+            $bestA = ($configs | ForEach-Object {
+                $c = $_; $r = @($codingResults | Where-Object { $_.Config -eq $c -and $_.QAGrade -eq "A" })
+                @{C=$c;V=$r.Count}
+            } | Sort-Object V -Descending | Select-Object -First 1).C
+
+            foreach ($c in $configs) {
+                $r = @($codingResults | Where-Object { $_.Config -eq $c })
+                if ($r.Count -eq 0) { continue }
+                $idiom = [math]::Round(($r | Measure-Object -Property QAIdiomScore -Average).Average, 1)
+                $psaE  = [math]::Round(($r | Measure-Object -Property QAPSAErrors -Average).Average, 1)
+                $sOk   = ($r | Where-Object { $_.QASyntaxOk }).Count
+                $aGrd  = ($r | Where-Object { $_.QAGrade -eq "A" }).Count
+                $wins  = @()
+                if ($c -eq $bestIdiom) { $wins += "idiom" }
+                if ($c -eq $bestPsa)   { $wins += "clean" }
+                if ($c -eq $bestA)     { $wins += "A-grade" }
+                $winStr = if ($wins.Count -gt 0) { ($wins -join ",") + " *" } else { "" }
+                Write-Host ("  {0,-30} {1,6}% {2,6} {3,6}/{4} {5,6}/{6}  {7}" -f `
+                    $c, $idiom, $psaE, $sOk, $r.Count, $aGrd, $r.Count, $winStr)
+            }
+        }
+    }
+}
+
 if ($allResults.Count -eq 0) {
     Write-Error "No results collected. Check server logs."
     exit 1
 }
 
-# ---------- Export CSV ----------
+
+# ---------- Export results ----------
 $csvPath = Join-Path $OutputDir "results.csv"
-$allResults | Select-Object Config, Label, Run, Prompt, Type, PromptTokens, CompletionTokens, WallTimeMs, TTFT_Ms, TokPerSec |
+$csvProps = @("Config","Label","Run","Prompt","Type","PromptTokens","CompletionTokens","WallTimeMs","TTFT_Ms","TokPerSec","DecodeTokPerSec")
+if ($qualityMode) { $csvProps += @("QASyntaxOk","QAPSAErrors","QAPSAWarnings","QAIdiomScore","QAGrade") }
+$allResults | Select-Object $csvProps |
     Export-Csv -Path $csvPath -NoTypeInformation
 Write-Host "  CSV: $csvPath" -ForegroundColor Yellow
 
+# Save full JSON for post-pass enrichment (Content preserved in JSON, not CSV)
+$jsonPath = Join-Path $OutputDir "results_full.json"
+$allResults | ConvertTo-Json -Depth 5 | Out-File -FilePath $jsonPath -Encoding utf8
+Write-Host "  JSON: $jsonPath" -ForegroundColor Yellow
+
 # ---------- Compute per-config statistics ----------
-$configs = $allResults | Select-Object -ExpandProperty Config -Unique
 $configStats = @()
 foreach ($cfg in $configs) {
     $cfgResults = $allResults | Where-Object { $_.Config -eq $cfg }
     $lbl  = ($cfgResults | Select-Object -First 1).Label
     $mode = detectSpecMode $cfg
 
-    $tokValues  = @($cfgResults | ForEach-Object { $_.TokPerSec })
-    $ttftValues = @($cfgResults | ForEach-Object { $_.TTFT_Ms })
+    $tokValues  = @($cfgResults | ForEach-Object { $_.DecodeTokPerSec })
 
     $median    = getMedian $tokValues
     $mean      = [math]::Round(($tokValues | Measure-Object -Average).Average, 2)
     $stddev    = getStdDev $tokValues
     $minTok    = [math]::Round(($tokValues | Measure-Object -Minimum).Minimum, 2)
     $maxTok    = [math]::Round(($tokValues | Measure-Object -Maximum).Maximum, 2)
+    $ttftValues = @($cfgResults | ForEach-Object { $_.TTFT_Ms })
     $medianTtft = getMedian $ttftValues
     $meanTtft   = [math]::Round(($ttftValues | Measure-Object -Average).Average, 0)
 
     # Sustained throughput: total completion tokens / total wall time
     $totalCompTok = ($cfgResults | Measure-Object -Property CompletionTokens -Sum).Sum
     $totalWallMs  = ($cfgResults | Measure-Object -Property WallTimeMs -Sum).Sum
-    $sustained    = if ($totalWallMs -gt 0) { [math]::Round($totalCompTok / ($totalWallMs / 1000.0), 2) } else { 0 }
+    $sustained   = if ($totalWallMs -gt 0) { [math]::Round($totalCompTok / ($totalWallMs / 1000.0), 2) } else { 0 }
     $peak         = $maxTok
+    $decodeMean   = [math]::Round(($cfgResults | ForEach-Object { $_.DecodeTokPerSec } | Measure-Object -Average).Average, 2)
 
     # Outlier count (>30% deviation from median)
     $outliers = @($tokValues | Where-Object { $median -gt 0 -and [math]::Abs($_ - $median) / $median -gt 0.30 }).Count
@@ -469,7 +637,7 @@ $maxMedian = ($configStats | Measure-Object -Property Median -Maximum).Maximum
 
 # ---------- Console summary ----------
 Write-Host ""
-Write-Host "  === Summary (median over $Runs runs) ===" -ForegroundColor Cyan
+Write-Host "  === Summary (median decode tok/s over $Runs runs) ===" -ForegroundColor Cyan
 foreach ($cs in $configStats) {
     $marker = if ($cs.Median -eq $maxMedian -and $configStats.Count -gt 1) { " *" } else { "" }
     Write-Host ("  {0,-45} {1,8} tok/s (med)  {2,8} tok/s (mean)  TTFT {3,5} ms{4}" -f `
@@ -493,7 +661,7 @@ if ($hasOutliers) { Write-Host "" }
 # Stats table
 Write-Host "  === Statistical Summary ===" -ForegroundColor Cyan
 Write-Host ("  {0,-30} {1,8} {2,8} {3,8} {4,8} {5,8} {6,10} {7,8}" -f `
-    "Config", "Median", "Mean", "StdDev", "Min", "Max", "Sustained", "TTFT(ms)")
+    "Config", "Dec tok/s", "Mean", "StdDev", "Min", "Max", "Thruput", "TTFT(ms)")
 Write-Host ("  {0}" -f ("-" * 98))
 foreach ($cs in $configStats) {
     Write-Host ("  {0,-30} {1,8} {2,8} {3,8} {4,8} {5,8} {6,10} {7,8}" -f `
@@ -501,7 +669,82 @@ foreach ($cs in $configStats) {
 }
 Write-Host ""
 
-$promptNames = $allResults | Select-Object -ExpandProperty Prompt -Unique
+# ---------- Grade distribution (quality mode) ----------
+$gradeHtml = ""
+if ($qualityMode) {
+    $grades = @("A","B+","B","C","D","F")
+    $gradeColors = @{A="#3fb950"; "B+"="#56d364"; B="#d29922"; C="#db6d28"; D="#f85149"; F="#f85149"}
+    foreach ($cfg in $configs) {
+        $cfgCoding = @($codingResults | Where-Object { $_.Config -eq $cfg })
+        if ($cfgCoding.Count -eq 0) { continue }
+        $gDist = $cfgCoding | Group-Object QAGrade -NoElement | ForEach-Object { @{ Grade=$_.Name; Count=$_.Count } }
+        $maxCount = ($gDist | Measure-Object -Property Count -Maximum).Maximum
+        $bars = ($grades | ForEach-Object {
+            $g = $_; $c = ($gDist | Where-Object { $_.Grade -eq $g } | Select-Object -First 1)
+            $cnt = if ($c) { $c.Count } else { 0 }
+            $w = if ($maxCount -gt 0) { [math]::Round(($cnt / $maxCount) * 100) } else { 0 }
+            "<div class='grade-bar' style='--grade-color:$($gradeColors[$g])'><span class='grade-label'>$g</span>" +
+            "<span class='grade-fill' style='width:${w}%'></span><span class='grade-count'>$cnt</span></div>"
+        }) -join ""
+        $gradeHtml += "<div class='grade-card'><div class='grade-name'>$cfg</div><div class='grade-bars'>$bars</div></div>"
+    }
+}
+
+# ---------- DeepSeek analysis ----------
+$analysisHtml = ""
+$dsKey = if ($env:DEEPSEEK_API_KEY) { $env:DEEPSEEK_API_KEY } else { [Environment]::GetEnvironmentVariable("DEEPSEEK_API_KEY","User") }
+if ($dsKey) {
+    Write-Host ""
+    Write-Host "  Running DeepSeek analysis..." -ForegroundColor Cyan
+    try {
+        $anaPrompt = Get-Content (Join-Path $BenchDir "prompts-analysis.json") -Raw | ConvertFrom-Json
+        # Build data summary
+        $data = @()
+        foreach ($cfg in $configs) {
+            $cs = $configStats | Where-Object { $_.Config -eq $cfg }
+            $cfgCoding = @($codingResults | Where-Object { $_.Config -eq $cfg })
+            $aGrd = if ($cfgCoding) { ($cfgCoding | Where-Object { $_.QAGrade -eq "A" }).Count } else { 0 }
+            $syn  = if ($cfgCoding) { ($cfgCoding | Where-Object { $_.QASyntaxOk }).Count } else { 0 }
+            $avg  = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAIdiomScore -Average).Average, 1) } else { 0 }
+            $data += "  $cfg | $($cs.Median) tok/s | idiom $($avg)% | syntax $syn/$($cfgCoding.Count) | A-grades $aGrd/$($cfgCoding.Count)"
+
+            # Check for post-pass AST results (may have run in a prior phase)
+            $astFile = Join-Path $OutputDir "postpass\ast_validation.json"
+            if (Test-Path $astFile) {
+                try {
+                    $astData = Get-Content $astFile -Raw | ConvertFrom-Json
+                    if ($astData -isnot [array]) { $astData = @($astData) }
+                    $cfgAst = @($astData | Where-Object { $_.Config -eq $cfg })
+                    if ($cfgAst.Count -gt 0) {
+                        $astPct = [math]::Round(($cfgAst | Measure-Object -Property ChecksPassed -Sum).Sum / [math]::Max(1, ($cfgAst | Measure-Object -Property ChecksTotal -Sum).Sum) * 100, 1)
+                        $parseOk = ($cfgAst | Where-Object { $_.ParseOk }).Count
+                        $data += "    -> AST structural: $astPct% ($($cfgAst | Measure-Object -Property ChecksPassed -Sum).Sum/$($cfgAst | Measure-Object -Property ChecksTotal -Sum).Sum checks), parse OK: $parseOk/$($cfgAst.Count)"
+                        # Per-prompt detail for failed prompts
+                        $failed = @($cfgAst | Where-Object { $_.ChecksPassed -lt $_.ChecksTotal })
+                        if ($failed.Count -gt 0) {
+                            $data += "    -> Failed prompts: $(($failed | ForEach-Object { "$($_.Prompt) ($($_.ChecksPassed)/$($_.ChecksTotal))" }) -join ", ")"
+                        }
+                    }
+                } catch { }
+            }
+        }
+        $isCompare = $configs.Count -gt 1
+        $templateKey = if ($isCompare) { "template_compare" } else { "template_single" }
+        $extra = if ($isCompare) { "6) Which model wins for coding quality and why." } else { "" }
+        $body = $anaPrompt.$templateKey -f ($data -join "`n"), $extra, $configs.Count
+
+        $headers = @{ "Authorization" = "Bearer $dsKey"; "Content-Type" = "application/json" }
+        $payload = @{ model = "deepseek-chat"; messages = @(@{role="system";content=$anaPrompt.system},@{role="user";content=$body}); max_tokens=500; temperature=0.3 } | ConvertTo-Json
+        $resp = Invoke-RestMethod -Uri "https://api.deepseek.com/v1/chat/completions" -Method Post -Headers $headers -Body $payload -TimeoutSec 30
+        $verdict = $resp.choices[0].message.content.Trim()
+        Write-Host "  DeepSeek analysis:" -ForegroundColor Green
+        $verdict -split "`n" | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $analysisHtml = "<div class='section'>deepseek analysis</div><div class='analysis-text'>" + ($verdict -replace "`n","<br>") + "</div>"
+    } catch {
+        Write-Warning "  DeepSeek analysis failed: $_"
+        $analysisHtml = "<div class='section'>deepseek analysis</div><p class='dim'>Analysis unavailable: $_</p>"
+    }
+}
 
 # ---------- Generate HTML report ----------
 
@@ -528,24 +771,40 @@ foreach ($pn in $promptNames) {
     $promptMax = 0
     $promptMedians = @{}
     $promptTtfts   = @{}
+    $promptGradeStrs = @{}
     foreach ($cfg in $configs) {
         $pResults = $allResults | Where-Object { $_.Config -eq $cfg -and $_.Prompt -eq $pn }
-        $tokVals  = @($pResults | ForEach-Object { $_.TokPerSec })
+        $tokVals  = @($pResults | ForEach-Object { $_.DecodeTokPerSec })
         $ttftVals = @($pResults | ForEach-Object { $_.TTFT_Ms })
         $med = getMedian $tokVals
         $promptMedians[$cfg] = $med
         $promptTtfts[$cfg]   = getMedian $ttftVals
+
+        # Collect grades for this prompt+config (quality mode only)
+        $gradeStr = ""
+        if ($qualityMode) {
+            $pGrades = @($pResults | Where-Object { $_.QAGrade } | ForEach-Object { $_.QAGrade })
+            if ($pGrades.Count -gt 0) {
+                $modeGrade = ($pGrades | Group-Object | Sort-Object Count -Descending | Select-Object -First 1).Name
+                $gradeColorMap = @{A="#3fb950"; "B+"="#56d364"; B="#d29922"; C="#db6d28"; D="#f85149"; F="#f85149"}
+                $gc = $gradeColorMap[$modeGrade]
+                if (-not $gc) { $gc = "#71717a" }
+                $gradeStr = "<span class='grade-badge' style='background:${gc}20;color:${gc};border:1px solid ${gc}50'>$modeGrade</span>"
+            }
+        }
+        $promptGradeStrs[$cfg] = $gradeStr
         if ($med -gt $promptMax) { $promptMax = $med }
     }
     foreach ($cfg in $configs) {
         $med  = $promptMedians[$cfg]
         $ttft = $promptTtfts[$cfg]
+        $gradeStr = $promptGradeStrs[$cfg]
         $pct  = if ($promptMax -gt 0) { [math]::Round(($med / $promptMax) * 100) } else { 0 }
         $cs   = $configStats | Where-Object { $_.Config -eq $cfg }
         $winMark = if ($med -eq $promptMax -and $configStats.Count -gt 1) { ' class="winner-cell"' } else { "" }
         $cells += @"
       <td$winMark>
-        <div class="bar-row"><div class="bar" style="width:${pct}%;background:$($cs.Color)"></div><span>$med</span></div>
+        <div class="bar-row"><div class="bar" style="width:${pct}%;background:$($cs.Color)"></div><span>$med$gradeStr</span></div>
         <div class="ttft-label">TTFT ${ttft} ms</div>
       </td>
 "@
@@ -652,7 +911,14 @@ $htmlContent = @"
 
   .footer { font-family:'JetBrains Mono',monospace; color:var(--dim); font-size:.55rem; margin-top:.75rem; text-align:right; }
   .footer span { color:var(--neon-green); }
-</style>
+  .grade-card { margin-bottom:.5rem; }
+  .grade-name { font-family:'JetBrains Mono',monospace; font-size:.5rem; color:var(--dim); margin-bottom:.15rem; }
+  .grade-bar { display:flex; align-items:center; gap:.3rem; margin:.1rem 0; }
+  .grade-label { font-size:.45rem; width:.8rem; text-align:right; color:var(--dim); }
+  .grade-fill { display:inline-block; height:6px; background:var(--grade-color); border-radius:3px; min-width:2px; }
+  .grade-count { font-size:.4rem; color:var(--dim); margin-left:.2rem; }
+  .analysis-text { font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--bright); line-height:1.6; margin:0; padding:.6rem; background:var(--surface); border-radius:4px; }
+  .grade-badge { font-family:'JetBrains Mono',monospace; font-size:.55rem; font-weight:700; padding:0 .25rem; border-radius:2px; margin-left:.3rem; }
 </head>
 <body>
 
@@ -666,11 +932,14 @@ $htmlContent = @"
   <span>$WarmupRuns warmup</span>
   <span>$MaxTokens max tok</span>
   <span>$($prompts.Count) prompts</span>
+  $(if ($qualityMode) { "<span>quality benchmark</span>" } else { "" })
 </div>
 
 <div class="cards">
 $cardsHtml
 </div>
+
+$(if ($analysisHtml) { $analysisHtml } else { "" })
 
 <div class="grid-2">
 <div>
@@ -721,15 +990,19 @@ $fullRows
 </details>
 
 <p class="footer"><span>//</span> beeLLama benchmark suite</p>
+
+$(if ($gradeHtml) {
+    "<div class='section'>per-config grade distribution</div><div class='grid-2'><div>$gradeHtml</div></div>"
+} else { "" })
+
+
 </body>
 </html>
 "@
-
+# Write HTML report and open in browser
 $htmlPath = Join-Path $OutputDir "results.html"
 $htmlContent | Out-File -FilePath $htmlPath -Encoding utf8
 Write-Host "  HTML: $htmlPath" -ForegroundColor Yellow
-
-# Open report in browser
 Start-Process $htmlPath
 
 Write-Host ""
