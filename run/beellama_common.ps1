@@ -21,11 +21,11 @@ $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
 # ---------- Resolve base paths ----------
 $LmStudioModels   = [Environment]::ExpandEnvironmentVariables($Config.lmstudioModelsPath)
-$AltModelsPath    = "D:\.lmstudio\models"       # alternate drive (DeltaNet models, LuceBox drafts)
+$AltModelsPath    = "D:\.lmstudio\models"       # alternate drive (DeltaNet models, LuceBox drafts, jackrong models moved off C:)
 
 $ModelBase_Unsloth   = Join-Path $LmStudioModels "unsloth\Qwen3.6-27B-MTP-GGUF"
 $ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-GGUF"
-$ModelBase_Jackrong  = Join-Path $LmStudioModels "Jackrong"
+$ModelBase_Jackrong  = Join-Path $AltModelsPath "jackrong"
 $ModelBase_GemmaAlt  = Join-Path $AltModelsPath "unsloth"
 $ModelBase_Gemma     = Join-Path $LmStudioModels "unsloth"
 $ModelBase_LuceBox   = Join-Path $LmStudioModels "Lucebox"
@@ -35,12 +35,12 @@ $ModelBase_Ornith   = Join-Path $AltModelsPath "deepreinforce-ai"
 # Target models keyed by friendly name
 $Model = @{
     "Qwen3.6-27B-Q4_K_M"       = Join-Path $ModelBase_Unsloth "Qwen3.6-27B-Q4_K_M.gguf"
-    # Jackrong Qwopus Coder (agentic coding fine-tune, Claude Opus trace inversion)
-    "Qwopus3.6-27B-Coder-Q4_K_M"     = Join-Path $ModelBase_Jackrong "Qwopus3.6-27B-Coder-MTP-GGUF\Qwopus3.6-27B-Coder-MTP-Q4_K_M.gguf"
+    # Jackrong Qwopus Coder (agentic coding fine-tune, Claude Opus trace inversion) — Compat-MTP on alt D:\jackrong
+    "Qwopus3.6-27B-Coder-Q5_K_M"     = "D:\.lmstudio\models\jackrong\Qwopus3.6-27B-Coder-Compat-MTP-GGUF\Qwopus3.6-27B-Coder-Compat-MTP-Q5_K_M.gguf"
     # Qwen3.6-27B non-MTP (standard Unsloth, DeltaNet — for LuceBox)
     "Qwen3.6-27B-Q4_K_M-DeltaNet"         = Join-Path $AltModelsPath "unsloth\Qwen3.6-27B-Q4_K_M.gguf"
-    # Qwopus Coder non-MTP (jackrong, DeltaNet — for LuceBox)
-    "Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet" = Join-Path $AltModelsPath "jackrong\Qwopus3.6-27B-Coder-Q4_K_M.gguf"
+    # Qwopus Coder Compat-MTP (jackrong — for LuceBox; using MTP file)
+    "Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet" = Join-Path $AltModelsPath "jackrong\Qwopus3.6-27B-Coder-Compat-MTP-GGUF\Qwopus3.6-27B-Coder-Compat-MTP-Q4_K_M.gguf"
     # Gemma 4 (Unsloth GGUFs)
     "Gemma4-12B-UD-Q4_K_XL"           = Join-Path $ModelBase_Gemma "gemma-4-12B-it-qat-GGUF\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
     "Gemma4-31B-QAT-UD-Q4_K_XL"       = Join-Path $ModelBase_Gemma "gemma-4-31B-it-qat-GGUF\gemma-4-31B-it-qat-UD-Q4_K_XL.gguf"
@@ -54,6 +54,8 @@ $Model = @{
     "Gemma4-12B-v2-Q6_K"          = Join-Path $AltModelsPath "yuxinlu1\gemma4-v2-Q6_K.gguf"
     # deepreinforce-ai Ornith-1.0-35B (Qwen3.5 MoE, 40L, 256 experts, agentic coding RL)
     "Ornith-1.0-35B-Q4_K_M"    = Join-Path $ModelBase_Ornith "ornith-1.0-35b-Q4_K_M.gguf"
+    # Jackrong Qwopus 35B-A3B Coder MTP (MoE 35B/3B active, thinking-off agentic coding)
+    "Qwopus3.6-35B-A3B-Coder-Q4_K_M" = "D:\.lmstudio\models\jackrong\Qwopus3.6-35B-A3B-Coder-MTP-Q4_K_M.gguf"
 }
 
 # DFlash draft models (Ardenzard GGUFs for beellama.cpp DFlash)
@@ -72,9 +74,10 @@ $Drafter = @{
 # Multimodal projectors
 $MmprojLookup = @{
     "Unsloth-F32"   = Join-Path $ModelBase_Unsloth  "mmproj-F32.gguf"
-    "Coder-F32"     = Join-Path $ModelBase_Jackrong "Qwopus3.6-27B-Coder-MTP-GGUF\mmproj-F32.gguf"
+    "Coder-F32"     = Join-Path $ModelBase_Jackrong "Qwopus3.6-27B-Coder-Compat-MTP-GGUF\mmproj-F32.gguf"
     "Gemma12B-F32"  = Join-Path $ModelBase_Gemma    "gemma-4-12B-it-qat-GGUF\mmproj-F32.gguf"
     "Gemma31B-F32"  = Join-Path $ModelBase_Gemma    "gemma-4-31B-it-qat-GGUF\mmproj-F32.gguf"
+    "Ornith-bf16"   = Join-Path $ModelBase_Ornith   "mmproj-deepreinforce-ai_Ornith-1.0-35B-bf16.gguf"
 }
 
 # ---------- Binary resolution ----------
