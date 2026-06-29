@@ -1,4 +1,4 @@
-# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 2048, think OFF
+# 256K ctx, TQ3 KV, KVFlash auto, chain, SWA 2048, fa-win 2048, think OFF, dense, vision OFF
 # Source: lucebox
 # Target: unsloth/Qwen3.6-27B-GGUF (non-MTP, DeltaNet layers)
 # Draft:  Lucebox/Qwen3.6-27B-DFlash-GGUF (dflash-draft-3.6-q4_k_m.gguf)
@@ -19,15 +19,16 @@ if (-not (Test-Path $LuceBoxBinary)) {
 
 $env:DFLASH27B_KV_TQ3 = "1"
 
-Write-Host "Launching: Qwen3.6-27B Q4_K_M + LuceBox DFlash (131k, TQ3 KV, port 8082)" -ForegroundColor Green
+Write-Host "Launching: Qwen3.6-27B Q4_K_M + LuceBox DFlash + KVFlash (256k, chain, port 8082)" -ForegroundColor Green
 & $LuceBoxBinary `
   $Model["Qwen3.6-27B-Q4_K_M-DeltaNet"] `
   --draft $Drafter["LuceBox-Qwen-DFlash"] `
-  --ddtree --ddtree-budget 22 `
   --fa-window 2048 `
   --draft-swa 2048 `
   --port 8082 --host 127.0.0.1 `
-  --max-ctx 131072 `
+  --max-ctx 262144 `
+  --kvflash auto --kvflash-policy qk `
+  --prefill-drafter $Drafter["LuceBox-Qwen-DFlash"] `
   --chunk 512 `
   --model-name "Qwen3.6-27B" `
   --think-max-tokens 15488 `

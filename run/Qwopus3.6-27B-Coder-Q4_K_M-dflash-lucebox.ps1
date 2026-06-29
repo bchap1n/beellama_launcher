@@ -1,11 +1,10 @@
-# 131K ctx, TQ3 KV, DDTree 22, SWA 2048, fa-win 2048, think OFF
+# 256K ctx, TQ3 KV, KVFlash auto, chain, SWA 2048, fa-win 2048, think OFF, dense
 # Source: lucebox
-# Target: jackrong/Qwopus3.6-27B-Coder-Q4_K_M (non-MTP, DeltaNet, block_count=65)
+# Target: jackrong/Qwopus3.6-27B-Coder-Q4_K_M (non-MTP)
 # Draft:  Lucebox/Qwen3.6-27B-DFlash-GGUF (dflash-draft-3.6-q4_k_m.gguf)
 #
-# Qwopus is an agentic coding fine-tune (Claude Opus trace inversion). Same
-# qwen35 arch as Qwen3.6, so the same LuceBox drafter and flags work.
-# 47-68 tok/s, 25-32% DFlash acceptance. Patched loader for block_count=65.
+# Qwopus is an agentic coding fine-tune (Claude Opus trace inversion). Same LuceBox drafter and flags work.
+# 47-68 tok/s, 25-32% DFlash acceptance.
 
 . "$PSScriptRoot\beellama_common.ps1"
 
@@ -17,15 +16,16 @@ if (-not (Test-Path $LuceBoxBinary)) {
 
 $env:DFLASH27B_KV_TQ3 = "1"
 
-Write-Host "Launching: Qwopus Coder + LuceBox DFlash (131k, TQ3 KV, port 8080)" -ForegroundColor Green
+Write-Host "Launching: Qwopus Coder + LuceBox DFlash + KVFlash (256k, chain, port 8080)" -ForegroundColor Green
 & $LuceBoxBinary `
   $Model["Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet"] `
   --draft $Drafter["LuceBox-Qwen-DFlash"] `
-  --ddtree --ddtree-budget 22 `
   --fa-window 2048 `
   --draft-swa 2048 `
   --port 8080 --host 0.0.0.0 `
-  --max-ctx 131072 `
+  --max-ctx 262144 `
+  --kvflash auto --kvflash-policy qk `
+  --prefill-drafter $Drafter["LuceBox-Qwen-DFlash"] `
   --chunk 512 `
   --model-name "qwopus-coder-dflash" `
   --think-max-tokens 15488 `
