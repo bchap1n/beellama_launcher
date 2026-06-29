@@ -434,7 +434,8 @@ for ($ci = 0; $ci -lt $Scripts.Count; $ci++) {
     for ($run = 1; $run -le $Runs; $run++) {
         Write-Host "  --- Run $run/$Runs ---" -ForegroundColor DarkCyan
         foreach ($p in $prompts) {
-            $result = runPromptWithRetry -prompt $p -url $configUrl -maxTokens $MaxTokens -retries $Retries
+            $tokLimit = if ($p.PSObject.Properties["maxTokens"]) { $p.maxTokens } else { $MaxTokens }
+            $result = runPromptWithRetry -prompt $p -url $configUrl -maxTokens $tokLimit -retries $Retries
             if ($result) {
                 $result | Add-Member -NotePropertyName "Run"    -NotePropertyValue $run
                 $result | Add-Member -NotePropertyName "Config" -NotePropertyValue $configName
