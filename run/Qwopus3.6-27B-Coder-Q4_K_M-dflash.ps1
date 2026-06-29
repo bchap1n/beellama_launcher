@@ -1,8 +1,8 @@
-# 131K ctx, turbo4 KV, b256/ub64, think OFF, temp 0.6
+# 64K ctx, turbo4 KV, b256/ub64, think OFF, temp 0.6, dense
 
 . "$PSScriptRoot\beellama_common.ps1"
 
-Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash IQ4_XS (131k, think OFF)" -ForegroundColor Green
+Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash IQ4_XS (64k, think OFF)" -ForegroundColor Green
 & (Get-ServerBinary -Build "beellama") `
   -m $Model["Qwopus3.6-27B-Coder-Q4_K_M"] `
   --spec-draft-model $Drafter["DFlash-IQ4_XS"] `
@@ -13,13 +13,14 @@ Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + DFlash IQ4_XS (131k, think O
   -np 1 `
   --kv-unified `
   -ngl all `
-  --ctx-size 131072 `
+  --ctx-size 65536 `
   -b 256 -ub 64 `
   --cache-type-k turbo4 --cache-type-v turbo4 `
   --flash-attn on `
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

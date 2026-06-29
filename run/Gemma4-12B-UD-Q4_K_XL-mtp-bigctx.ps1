@@ -1,4 +1,4 @@
-# 256K ctx, think OFF, unified
+# 256K ctx, think OFF, dense, vision ON
 #
 # Gemma 4 12B QAT (Unsloth) — max-context variant. Architectural limit: 262144.
 # Sliding-window arch means only ~6 of 48 layers grow with context. At 256K q4_0 KV
@@ -7,8 +7,6 @@
 # Unsloth model page: https://unsloth.ai/docs/models/gemma-4
 # GGUF: https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF
 #
-# Architecture: 48 layers, sliding-window (1024) + full-attention interleaved,
-#   max_position_embeddings: 262144. QAT UD-Q4_K_XL weights: 6.7 GB.
 #
 # Tuning for single 3090 (24 GB @ 250 W):
 #   - Context 262144 — architectural max. Sliding layers fixed at 1024 tokens each.
@@ -45,6 +43,7 @@ $MtpDraft = Join-Path (Split-Path $Model["Gemma4-12B-UD-Q4_K_XL"]) "gemma-4-12B-
   --flash-attn on `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

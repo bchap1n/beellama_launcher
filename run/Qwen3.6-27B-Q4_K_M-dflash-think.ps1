@@ -1,4 +1,4 @@
-# 131K ctx, turbo4 KV, b256/ub64, think ON
+# 131K ctx, turbo4 KV, b256/ub64, think ON, dense, vision OFF
 
 . "$PSScriptRoot\beellama_common.ps1"
 
@@ -20,6 +20,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash IQ4_XS (131k, think)" -Foregr
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning on `

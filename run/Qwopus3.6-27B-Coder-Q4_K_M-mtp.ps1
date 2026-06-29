@@ -1,8 +1,8 @@
-# 131K ctx, q4_0 KV, think OFF, temp 0.6
+# 131K ctx, q4_0 KV, think OFF, temp 0.6, dense
 #
 # Qwopus3.6-27B-Coder (Jackrong) — agentic coding fine-tune via Claude Opus Trace Inversion.
 # Scored 67% on SWE-bench verified (full 500) with think disabled at Q5_K_M on 5090.
-# Native 32K context; beyond that uses YaRN rope scaling (same base architecture as Qwen3.6).
+# Native 32K context; beyond that uses YaRN rope scaling.
 #
 # Model card: https://huggingface.co/Jackrong/Qwopus3.6-27B-Coder-MTP-GGUF
 #
@@ -49,6 +49,7 @@ Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + MTP (131k, think OFF)" -Fore
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

@@ -1,4 +1,4 @@
-# 200K ctx, q4_0 KV, deepseek think, temp 1.0
+# 200K ctx, q4_0 KV, deepseek think, temp 1.0, dense
 #
 # Qwopus3.6-27B-Coder (Jackrong) — agentic coding fine-tune via Claude Opus Trace Inversion.
 # think ON variant: enables <think> chain-of-thought for complex multi-step design, SVG
@@ -51,9 +51,11 @@ Write-Host "Launching: Qwopus3.6-27B-Coder Q4_K_M + MTP (131k, think ON)" -Foreg
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning on `
+  --reasoning-loop-guard force-close `
   --reasoning-format deepseek `
   --chat-template-kwargs '{"preserve_thinking":true}' `
   --temp 1.0 --top-p 0.95 --min-p 0.0

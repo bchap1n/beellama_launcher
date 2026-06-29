@@ -1,4 +1,4 @@
-# 131K ctx, think ON, unified
+# 131K ctx, think ON, dense, vision ON
 #
 # Gemma 4 12B QAT (Unsloth) — think ON variant. Enables <|channel>thought for complex
 # multi-step tasks. Same tuning as the base script with think toggled on.
@@ -6,15 +6,7 @@
 # Unsloth model page: https://unsloth.ai/docs/models/gemma-4
 # GGUF: https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF
 #
-# Architecture (estimated from 31B config — same Gemma 4 family):
-#   ~36-48 layers, sliding-window + full-attention pattern, GQA with ~8-16 kv_heads
-#   Native max_position_embeddings: 262144
-#   QAT UD-Q4_K_XL weights on disk: 6.7 GB
 #
-# Architecture notes (vs Qwen):
-#   - Thinking toggle: --reasoning on/off (same as Qwen)
-#   - Thinking format: <|channel>thought blocks (different markup from deepseek)
-#   - MTP: --spec-type draft-mtp (explicit flag needed for upstream llama.cpp)
 #   - Sampling: Google defaults — temp 1.0, top-p 0.95, top-k 64 (no min-p)
 #
 # Tuning for single 3090 (24 GB @ 250 W):
@@ -51,6 +43,7 @@ $MtpDraft = Join-Path (Split-Path $Model["Gemma4-12B-UD-Q4_K_XL"]) "gemma-4-12B-
   --flash-attn on `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning on `

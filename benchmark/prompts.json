@@ -4,7 +4,7 @@
     "type": "Code",
     "messages": [
       { "role": "system", "content": "You are a helpful coding assistant." },
-      { "role": "user", "content": "Write a Python function that implements binary search on a sorted list. Include type hints, docstring, and handle edge cases." }
+      { "role": "user", "content": "Write a powershell 7 function that implements binary search on a sorted list. Include type hints, docstring, and handle edge cases." }
     ]
   },
   {
@@ -12,7 +12,7 @@
     "type": "Code",
     "messages": [
       { "role": "system", "content": "You are a helpful coding assistant." },
-      { "role": "user", "content": "Implement a singly linked list in Python with insert, delete, search, and reverse methods. Include type hints." }
+      { "role": "user", "content": "Implement a singly linked list in powershell 7 with insert, delete, search, and reverse methods. Include type hints." }
     ]
   },
   {

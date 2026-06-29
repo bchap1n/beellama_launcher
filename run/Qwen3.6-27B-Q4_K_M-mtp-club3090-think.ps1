@@ -1,4 +1,4 @@
-# 200K ctx, q4_0 KV, b4096/ub512, think ON, vision, club-3090
+# 200K ctx, q4_0 KV, b4096/ub512, think ON, dense, vision ON, club-3090
 #
 # Same as mtp-club3090.ps1 with think ON.
 # Club-3090 note: for think workloads, tune MTP deeper (--spec-draft-n-max 5) since
@@ -25,6 +25,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP + think (club-3090 200K, q4_0 KV
   --jinja `
   --reasoning-format deepseek `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning on `

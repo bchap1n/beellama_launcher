@@ -52,7 +52,8 @@
 param(
     [switch]$List,
     [switch]$Rerun,
-    [switch]$Benchmark
+    [switch]$Benchmark,
+    [int]$MaxTokens
 )
 
 nvidia-smi -pl 250
@@ -85,7 +86,8 @@ function getScriptSource {
             return $Matches[1]
         }
     }
-    return "beellama_fork"  # default
+    Write-Host "  WARNING: $([System.IO.Path]::GetFileName($Path)) has no source declared — skipping" -ForegroundColor Yellow
+    return $null
 }
 
 function parseScriptName {
@@ -99,12 +101,12 @@ function parseScriptName {
     $modifiers = @()
 
     foreach ($sm in $specModes) {
-        if ($BaseName -match "-$([regex]::Escape($sm))(?:-(.+))?$") {
+        if ($BaseName -cmatch "-$([regex]::Escape($sm))(?:-(.+))?$") {
             $specMode  = $sm
             if ($Matches[1]) {
                 $modifiers = $Matches[1] -split "-"
             }
-            $modelQuant = $BaseName -replace "-$([regex]::Escape($sm)).*$", ""
+            $modelQuant = $BaseName -creplace "-$([regex]::Escape($sm)).*$", ""
             break
         }
     }
@@ -148,7 +150,7 @@ function parseScriptName {
 # ---------- Collect and sort scripts ----------
 $scripts = Get-ChildItem -Path $RunDir -Filter "*.ps1" |
     ForEach-Object { parseScriptName $_.Name } |
-    Where-Object { $_ -ne $null } |
+    Where-Object { $_ -ne $null -and $_.Source } |
     Sort-Object -Property Source, SpecMode, Model, Quant, { $_.Modifiers -join "" }
 
 if ($scripts.Count -eq 0) {
@@ -259,9 +261,22 @@ if ($Benchmark) {
         Write-Host "    - $([System.IO.Path]::GetFileNameWithoutExtension($bp))" -ForegroundColor Cyan
     }
     Write-Host ""
+    Write-Host "  Prompt mode:" -ForegroundColor Cyan
+    Write-Host "    [1] Standard      (~150 tok short prompts)" -ForegroundColor DarkCyan
+    Write-Host "    [2] LongCtx       (~125K tok prefill per prompt)" -ForegroundColor DarkCyan
+    Write-Host "    [3] Coding Quality (PowerShell, static analysis scoring)" -ForegroundColor DarkCyan
+    $promptChoice = Read-Host "  Select [1-3]"
+    Write-Host ""
 
-    # Launch orchestrator
-    & $BenchScript -Scripts $benchScripts
+    # Launch orchestrator with MaxTokens passthrough
+    $mtArg = if ($MaxTokens) { @("-MaxTokens", $MaxTokens) } else { @() }
+    if ($promptChoice -eq "2") {
+        & $BenchScript -Scripts $benchScripts -LongCtx @mtArg
+    } elseif ($promptChoice -eq "3") {
+        & $BenchScript -Scripts $benchScripts -Quality -Runs 1 @mtArg
+    } else {
+        & $BenchScript -Scripts $benchScripts @mtArg
+    }
     exit 0
 }
 

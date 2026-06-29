@@ -1,4 +1,4 @@
-# 200K ctx, q4_0 KV, b4096/ub512, think OFF, vision
+# 200K ctx, q4_0 KV, b4096/ub512, think OFF, dense, vision ON
 
 . "$PSScriptRoot\beellama_common.ps1"
 
@@ -20,6 +20,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP (122k, standard)" -ForegroundCol
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

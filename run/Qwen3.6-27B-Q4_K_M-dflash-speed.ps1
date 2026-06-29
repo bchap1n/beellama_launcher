@@ -1,4 +1,4 @@
-# 131K ctx, turbo4 KV, b256/ub64, think OFF, vision, greedy draft
+# 131K ctx, turbo4 KV, b256/ub64, think OFF, dense, vision ON, greedy draft
 
 . "$PSScriptRoot\beellama_common.ps1"
 
@@ -24,6 +24,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + DFlash IQ4_XS (131k, speed)" -Foregr
   --cache-ram 0 `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

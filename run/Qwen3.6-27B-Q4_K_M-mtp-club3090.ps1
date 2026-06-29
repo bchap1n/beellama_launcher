@@ -1,4 +1,4 @@
-# 200K ctx, q4_0 KV, b4096/ub512, think OFF, vision, club-3090
+# 200K ctx, q4_0 KV, b4096/ub512, think OFF, dense, vision ON, club-3090
 #
 # Optimizations from club-3090 research (noonghunna/club-3090):
 #   -ub 512        Smaller micro-batch avoids activation peaks at high fill (was -ub 256).
@@ -42,6 +42,7 @@ Write-Host "Launching: Qwen3.6-27B Q4_K_M + MTP (club-3090 200K, q4_0 KV)" -Fore
   --jinja `
   --reasoning-format deepseek `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

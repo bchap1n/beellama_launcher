@@ -1,27 +1,12 @@
-# 65K ctx, think OFF, dense
+# 65K ctx, think OFF, dense, vision ON
 #
-# Gemma 4 31B QAT (Unsloth) — Google's 31B dense model with Unsloth QAT (Quantization-Aware
+# Gemma 4 31B QAT (Unsloth) — Google's 31B model with Unsloth QAT (Quantization-Aware
 # Training) and native MTP draft head. The QAT variant preserves quality at 4-bit while
 # reducing memory ~3× vs BF16. MTP delivers 1.67× speedup (76-125 tok/s on 5090).
 #
 # Unsloth model page: https://unsloth.ai/docs/models/gemma-4/qat
 # GGUF: https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF
 #
-# Architecture (from GGUF config.json):
-#   60 layers: 50× sliding_attention (window=1024) + 10× full_attention
-#   num_kv_heads=16, head_dim=256, global_kv_heads=4, global_head_dim=512
-#   Native max_position_embeddings: 262144
-#
-#   The sliding window is the key to VRAM: 50 of 60 layers have KV fixed at 1024 tokens.
-#   Only the 10 full-attention layers grow with context. At 65K:
-#     Sliding layers (fixed):   0.2 GB
-#     Full-attn layers (65K):   3.9 GB
-#     Total KV (q4_0 K+V):     ~4.1 GB
-#
-# Architecture notes (vs Qwen):
-#   - Thinking toggle: --reasoning off (same as Qwen — chat-template-kwargs is deprecated)
-#   - Thinking format: <|channel>thought blocks (different markup from deepseek)
-#   - Sampling: Google defaults — temp 1.0, top-p 0.95, top-k 64 (no min-p)
 #
 # Tuning for single 3090 (24 GB @ 250 W):
 #   - Context 65536 — sweet spot per sliding-window KV math. 81920 possible (~23.4 GB).
@@ -60,6 +45,7 @@ Write-Host "Launching: Gemma 4 31B QAT UD-Q4_K_XL + MTP (65k, think OFF, llama.c
   --flash-attn on `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

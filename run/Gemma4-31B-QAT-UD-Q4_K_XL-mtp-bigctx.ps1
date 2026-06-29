@@ -1,4 +1,4 @@
-# 81K ctx, think OFF, dense, b1024
+# 81K ctx, think OFF, b1024, dense, vision ON
 #
 # Gemma 4 31B QAT (Unsloth) — max-context variant. Pushes to 81920 on 24 GB.
 # This is the VRAM ceiling for 31B: at 81K the full-attn KV reaches ~4.9 GB,
@@ -7,14 +7,6 @@
 # Unsloth model page: https://unsloth.ai/docs/models/gemma-4/qat
 # GGUF: https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF
 #
-# Architecture (from GGUF config.json):
-#   60 layers: 50× sliding_attention (window=1024) + 10× full_attention
-#   num_kv_heads=16, head_dim=256, global_kv_heads=4, global_head_dim=512
-#
-#   Sliding window KV math at 81920:
-#     Sliding layers (fixed):   0.2 GB
-#     Full-attn layers (81K):   4.9 GB
-#     Total KV (q4_0 K+V):     ~5.1 GB
 #
 # Tuning for single 3090 (24 GB @ 250 W):
 #   - Context 81920 — max safe for 31B Q4_K_XL on 24 GB. 98304+ doesn't fit.
@@ -48,6 +40,7 @@ Write-Host "Launching: Gemma 4 31B QAT UD-Q4_K_XL + MTP (81k, think OFF, llama.c
   --flash-attn on `
   --jinja `
   --no-mmap --mlock `
+  --no-warmup `
   --no-host --metrics `
   --log-timestamps --log-prefix --log-colors off `
   --reasoning off `

@@ -26,8 +26,10 @@ $AltModelsPath    = "D:\.lmstudio\models"       # alternate drive (DeltaNet mode
 $ModelBase_Unsloth   = Join-Path $LmStudioModels "unsloth\Qwen3.6-27B-MTP-GGUF"
 $ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-GGUF"
 $ModelBase_Jackrong  = Join-Path $LmStudioModels "Jackrong"
+$ModelBase_GemmaAlt  = Join-Path $AltModelsPath "unsloth"
 $ModelBase_Gemma     = Join-Path $LmStudioModels "unsloth"
 $ModelBase_LuceBox   = Join-Path $LmStudioModels "Lucebox"
+$ModelBase_Ornith   = Join-Path $AltModelsPath "deepreinforce-ai"
 
 # ---------- Model catalog ----------
 # Target models keyed by friendly name
@@ -42,15 +44,29 @@ $Model = @{
     # Gemma 4 (Unsloth GGUFs)
     "Gemma4-12B-UD-Q4_K_XL"           = Join-Path $ModelBase_Gemma "gemma-4-12B-it-qat-GGUF\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
     "Gemma4-31B-QAT-UD-Q4_K_XL"       = Join-Path $ModelBase_Gemma "gemma-4-31B-it-qat-GGUF\gemma-4-31B-it-qat-UD-Q4_K_XL.gguf"
+    # Gemma 4 (balanced combo — alt drive, non-QAT)
+    "Gemma4-31B-Q4_K_S"               = Join-Path $ModelBase_GemmaAlt "gemma-4-31B-it-GGUF\gemma-4-31B-it-Q4_K_S.gguf"
+    # bytkim Qwen3.6-27B MTP pi-tune (QLORA SFT for PI harness, no-thinking agentic coding)
+    "Qwen3.6-27B-MTP-pi-tune-Q4_K_M" = Join-Path $AltModelsPath "bytkim\Qwen3.6-27B-MTP-pi-tune-Q4_K_M.gguf"
+    # bytkim Qwen3.6-27B MTP pi-reasoning (QLORA SFT, thinking-trained companion to pi-tune)
+    "Qwen3.6-27B-MTP-pi-reasoning-Q4_K_M" = Join-Path $AltModelsPath "bytkim\Qwen3.6-27B-MTP-pi-reasoning-Q4_K_M.gguf"
+    # yuxinlu1 Gemma 4 v2 12B (MTP fine-tune, separate draft heads)
+    "Gemma4-12B-v2-Q6_K"          = Join-Path $AltModelsPath "yuxinlu1\gemma4-v2-Q6_K.gguf"
+    # deepreinforce-ai Ornith-1.0-35B (Qwen3.5 MoE, 40L, 256 experts, agentic coding RL)
+    "Ornith-1.0-35B-Q4_K_M"    = Join-Path $ModelBase_Ornith "ornith-1.0-35b-Q4_K_M.gguf"
 }
 
 # DFlash draft models (Ardenzard GGUFs for beellama.cpp DFlash)
 $Drafter = @{
     "DFlash-IQ4_XS" = Join-Path $ModelBase_Ardenzard "Qwen3.6-27B-DFlash-IQ4_XS.gguf"
+    # Anbeeld DFlash drafts (for beellama.cpp DFlash)
+    "Anbeeld-Gemma4-31B-DFlash-IQ4_XS" = Join-Path $AltModelsPath "anbeeld\gemma-4-31B-it-DFlash-GGUF\gemma4-31b-it-dflash-IQ4_XS.gguf"
     # LuceBox DFlash drafts (lucebox-hub native spec decode)
     "LuceBox-Gemma4-31B-DFlash" = Join-Path $ModelBase_LuceBox "gemma-4-31B-it-DFlash-GGUF\gemma-4-31B-it-DFlash-q8_0.gguf"
     # LuceBox Qwen3.6-27B DFlash draft (non-MTP, for use with unsloth/Qwen3.6-27B-GGUF)
     "LuceBox-Qwen-DFlash" = Join-Path $AltModelsPath "Lucebox\Qwen3.6-27B-DFlash-GGUF\dflash-draft-3.6-q4_k_m.gguf"
+    # KVFlash scorer (Qwen3-0.6B) for chunk ranking in long-context paging
+    "KVFlash-Qwen3-0.6B" = Join-Path $AltModelsPath "drafter\Qwen3-0.6B-BF16.gguf"
 }
 
 # Multimodal projectors
@@ -124,8 +140,8 @@ function Get-CommonFlags {
         $Flags += "--spec-draft-ngl",       "all"
     }
     elseif ($SpecMode -eq "mtp") {
-        # MTP: auto-detected by fork; set draft token count per Unsloth recommendation
-        $Flags += "--spec-draft-n-max", "2"
+        # MTP: explicit spec-type required by main beellama.cpp (fork auto-detects it)
+        $Flags += "--spec-type", "draft-mtp", "--spec-draft-n-max", "2"
     }
     # "none": no speculative decoding flags
 

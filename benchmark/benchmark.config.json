@@ -1,11 +1,21 @@
 {
   "runs": 3,
-  "maxTokens": 512,
+  "maxTokens": 2048,
   "warmupRuns": 3,
   "warmupTokens": 256,
   "cooldownSec": 0,
+  "configCooldownSec": 60,
   "retries": 2,
   "serverUrl": "http://localhost:8082",
   "serverTimeoutSec": 180,
-  "promptsFile": "prompts.json"
+  "promptsFile": "prompts.json",
+  "quality": {
+    "enabled": false,
+    "promptsFile": "prompts-coding.json",
+    "psScriptAnalyzer": {
+      "severity": ["Error", "Warning"]
+    },
+    "idiomChecks": true,
+    "timeoutSeconds": 30
+  }
 }
