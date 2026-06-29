@@ -55,6 +55,7 @@ $Runs              = $defaults['runs']
 $MaxTokens         = $defaults['maxTokens']
 # Safety: if resolution yields 0, default to 2048 (thinking models need room)
 if ($MaxTokens -le 0) { $MaxTokens = 2048; Write-Warning "MaxTokens was 0, defaulting to 2048" }
+if ($Runs -le 0) { $Runs = 3; Write-Warning "Runs was 0, defaulting to 3" }
 $WarmupRuns        = $defaults['warmupRuns']
 $WarmupTokens      = $defaults['warmupTokens']
 $CooldownSec       = $defaults['cooldownSec']
