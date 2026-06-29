@@ -90,6 +90,21 @@ function getScriptSource {
     return $null
 }
 
+# ---------- Resolve ctx size from script content (authoritative over comment) ----------
+function getScriptCtxSize {
+    param([string]$Path)
+    $lines = Get-Content $Path -TotalCount 80 -ErrorAction SilentlyContinue
+    foreach ($line in $lines) {
+        if ($line -match '--ctx-size\s+(\d+)') {
+            return [int]$Matches[1]
+        }
+        if ($line -match '^\s*-c\s+(\d+)') {
+            return [int]$Matches[1]
+        }
+    }
+    return $null
+}
+
 function parseScriptName {
     param([string]$FileName)
 
@@ -134,6 +149,11 @@ function parseScriptName {
         $description = $Matches[1]
     }
 
+    $ctxSize = getScriptCtxSize $scriptPath
+
+    $ctxSuffix = if ($ctxSize) { " [$([int]($ctxSize/1024))k]" } else { "" }
+    $displayName = "$modelName $quant [$specMode$(if ($modifiers) { ' ' + ($modifiers -join ' ') })]$ctxSuffix"
+
     return [PSCustomObject]@{
         FileName    = $FileName
         Path        = $scriptPath
@@ -143,7 +163,8 @@ function parseScriptName {
         Modifiers   = $modifiers
         Description = $description
         Source      = getScriptSource $scriptPath
-        DisplayName = "$modelName $quant [$specMode$(if ($modifiers) { ' ' + ($modifiers -join ' ') })]"
+        CtxSize     = $ctxSize
+        DisplayName = $displayName
     }
 }
 
@@ -188,7 +209,8 @@ function showMenu {
         }
 
         $modStr = if ($e.Modifiers.Count -gt 0) { " ($($e.Modifiers -join ', '))" } else { "" }
-        $label  = "$($e.Model) $($e.Quant)$modStr"
+        $ctxStr = if ($e.CtxSize) { " [$([int]($e.CtxSize/1024))k]" } else { "" }
+        $label  = "$($e.Model) $($e.Quant)$modStr$ctxStr"
 
         Write-Host ("    [{0,2}] {1,-50} {2}" -f $index, $label, $e.Description) -ForegroundColor DarkCyan
         $index++
