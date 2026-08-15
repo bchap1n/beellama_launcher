@@ -29,7 +29,14 @@
 /.continue/
 /.windsurf/
 /.claude/
+/.omp/
 *.code-workspace
+
+# Agent context
+AGENTS.md
+
+# Nested projects (each is its own git repo)
+/benchmark/llm-bench-rig/
 
 # Private notes
 readme.private.md
