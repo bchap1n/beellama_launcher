@@ -56,33 +56,58 @@ param(
     [int]$MaxTokens
 )
 
-nvidia-smi -pl 250
-
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RunDir   = Join-Path $RepoRoot "run"
 $LastRunFile = Join-Path $RepoRoot ".last-run.json"
 
-if (-not (Test-Path $RunDir)) {
+# ---------- Set GPU power limit (best-effort; only on actual launch paths) ----------
+function Set-GpuPowerLimit
+{
+    param(
+        [int]$PowerLimitWatts = 250
+    )
+    try
+    {
+        & nvidia-smi -pl $PowerLimitWatts *> $null
+        if ($LASTEXITCODE -ne 0)
+        {
+            Write-Host "  (nvidia-smi -pl $PowerLimitWatts returned $LASTEXITCODE - continuing without power limit)" -ForegroundColor DarkYellow
+        }
+    } catch
+    {
+        Write-Host "  (nvidia-smi not available - power limit unchanged)" -ForegroundColor DarkYellow
+    }
+}
+
+# Note: benign quit paths use `return 0` (keeps an interactive pwsh alive);
+# error paths keep `exit 1` so a non-zero code still propagates to callers.
+
+if (-not (Test-Path $RunDir))
+{
     Write-Error "Run directory not found: $RunDir"
     exit 1
 }
 
 # ---------- Parse script filenames ----------
 # Convention: {Model}-{Quant}-{SpecMode}[-modifier].ps1
-# Examples:   Qwen3.6-27B-Q4_K_M-dflash.ps1
-#             Qwen3.6-27B-Q4_K_M-dflash-mtp-reasoning.ps1
-#             Qwopus3.5-9B-Coder-none.ps1
+# Examples:   Qwen3.8-27B-Q4_K_M-mtp.ps1
+#             Ornith-1.0-35B-Q4_K_M-none-think.ps1
+#             Muse-Glimmer-30B-UD-Q4_K_XL-dflash.ps1
 
 # ---------- Resolve source binary from script content ----------
-function getScriptSource {
+function getScriptSource
+{
     param([string]$Path)
     $lines = Get-Content $Path -TotalCount 80 -ErrorAction SilentlyContinue
-    foreach ($line in $lines) {
-        if ($line -match 'Get-ServerBinary\s+-Build\s+"([^"]+)"') {
+    foreach ($line in $lines)
+    {
+        if ($line -match 'Get-ServerBinary\s+-Build\s+"([^"]+)"')
+        {
             return $Matches[1]
         }
-        if ($line -match '# Source:\s*(\S+)') {
+        if ($line -match '# Source:\s*(\S+)')
+        {
             return $Matches[1]
         }
     }
@@ -91,21 +116,26 @@ function getScriptSource {
 }
 
 # ---------- Resolve ctx size from script content (authoritative over comment) ----------
-function getScriptCtxSize {
+function getScriptCtxSize
+{
     param([string]$Path)
     $lines = Get-Content $Path -TotalCount 80 -ErrorAction SilentlyContinue
-    foreach ($line in $lines) {
-        if ($line -match '--ctx-size\s+(\d+)') {
+    foreach ($line in $lines)
+    {
+        if ($line -match '--ctx-size\s+(\d+)')
+        {
             return [int]$Matches[1]
         }
-        if ($line -match '^\s*-c\s+(\d+)') {
+        if ($line -match '^\s*-c\s+(\d+)')
+        {
             return [int]$Matches[1]
         }
     }
     return $null
 }
 
-function parseScriptName {
+function parseScriptName
+{
     param([string]$FileName)
 
     $BaseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
@@ -115,10 +145,13 @@ function parseScriptName {
     $specMode  = ""
     $modifiers = @()
 
-    foreach ($sm in $specModes) {
-        if ($BaseName -cmatch "-$([regex]::Escape($sm))(?:-(.+))?$") {
+    foreach ($sm in $specModes)
+    {
+        if ($BaseName -cmatch "-$([regex]::Escape($sm))(?:-(.+))?$")
+        {
             $specMode  = $sm
-            if ($Matches[1]) {
+            if ($Matches[1])
+            {
                 $modifiers = $Matches[1] -split "-"
             }
             $modelQuant = $BaseName -creplace "-$([regex]::Escape($sm)).*$", ""
@@ -126,17 +159,20 @@ function parseScriptName {
         }
     }
 
-    if (-not $specMode) {
+    if (-not $specMode)
+    {
         return $null
     }
 
     # Split model+quant: everything up to the last dash-separated quant token
     # e.g. "Qwen3.6-27B-Q4_K_M" → model "Qwen3.6-27B", quant "Q4_K_M"
     $quantPattern = "(Q\d+_K_[A-Z]+|Q\d+_K|BF16|F32|F16|none)"
-    if ($modelQuant -match "^(.+)-($quantPattern)$") {
+    if ($modelQuant -match "^(.+)-($quantPattern)$")
+    {
         $modelName = $Matches[1]
         $quant     = $Matches[2]
-    } else {
+    } else
+    {
         $modelName = $modelQuant
         $quant     = ""
     }
@@ -145,13 +181,18 @@ function parseScriptName {
     $scriptPath = Join-Path $RunDir $FileName
     $description = ""
     $firstLine = Get-Content $scriptPath -TotalCount 1 -ErrorAction SilentlyContinue
-    if ($firstLine -match "^#\s*(.+)") {
+    if ($firstLine -match "^#\s*(.+)")
+    {
         $description = $Matches[1]
     }
 
     $ctxSize = getScriptCtxSize $scriptPath
 
-    $ctxSuffix = if ($ctxSize) { " [$([int]($ctxSize/1024))k]" } else { "" }
+    $ctxSuffix = if ($ctxSize)
+    { " [$([int]($ctxSize/1024))k]" 
+    } else
+    { "" 
+    }
     $displayName = "$modelName $quant [$specMode$(if ($modifiers) { ' ' + ($modifiers -join ' ') })]$ctxSuffix"
 
     return [PSCustomObject]@{
@@ -174,13 +215,23 @@ $scripts = Get-ChildItem -Path $RunDir -Filter "*.ps1" |
     Where-Object { $_ -ne $null -and $_.Source } |
     Sort-Object -Property Source, SpecMode, Model, Quant, { $_.Modifiers -join "" }
 
-if ($scripts.Count -eq 0) {
+if ($scripts.Count -eq 0)
+{
     Write-Host "No launch scripts found in $RunDir" -ForegroundColor Red
     exit 1
 }
 
+# ---------- Reject conflicting switch combinations ----------
+$mode = @($List, $Rerun, $Benchmark) | Where-Object { $_ } | Measure-Object
+if ($mode.Count -gt 1)
+{
+    Write-Host "Error: -List, -Rerun and -Benchmark are mutually exclusive." -ForegroundColor Red
+    exit 1
+}
+
 # ---------- Display grouped menu ----------
-function showMenu {
+function showMenu
+{
     param($entries)
 
     Write-Host ""
@@ -190,26 +241,51 @@ function showMenu {
     $currentGroup = ""
     $index = 1
 
-    foreach ($e in $entries) {
+    foreach ($e in $entries)
+    {
         $group = "$($e.Source) - $($e.SpecMode)"
-        if ($group -ne $currentGroup) {
+        if ($group -ne $currentGroup)
+        {
             Write-Host ""
             # Color-code by source
-            $groupColor = switch ($e.Source) {
-                "beellama"        { "Green" }
-                "beellama_fork"   { "Yellow" }
-                "ik_llama"        { "Magenta" }
-                "llama.cpp"       { "Cyan" }
-                "beellama_prebuilt" { "DarkYellow" }
-                "lucebox"         { "Blue" }
-                default           { "Gray" }
+            $groupColor = switch ($e.Source)
+            {
+                "beellama"
+                { "Green" 
+                }
+                "beellama_fork"
+                { "Yellow" 
+                }
+                "ik_llama"
+                { "Magenta" 
+                }
+                "llama.cpp"
+                { "Cyan" 
+                }
+                "beellama_prebuilt"
+                { "DarkYellow" 
+                }
+                "lucebox"
+                { "Blue" 
+                }
+                default
+                { "Gray" 
+                }
             }
             Write-Host "  $group" -ForegroundColor $groupColor
             $currentGroup = $group
         }
 
-        $modStr = if ($e.Modifiers.Count -gt 0) { " ($($e.Modifiers -join ', '))" } else { "" }
-        $ctxStr = if ($e.CtxSize) { " [$([int]($e.CtxSize/1024))k]" } else { "" }
+        $modStr = if ($e.Modifiers.Count -gt 0)
+        { " ($($e.Modifiers -join ', '))" 
+        } else
+        { "" 
+        }
+        $ctxStr = if ($e.CtxSize)
+        { " [$([int]($e.CtxSize/1024))k]" 
+        } else
+        { "" 
+        }
         $label  = "$($e.Model) $($e.Quant)$modStr$ctxStr"
 
         Write-Host ("    [{0,2}] {1,-50} {2}" -f $index, $label, $e.Description) -ForegroundColor DarkCyan
@@ -222,45 +298,63 @@ function showMenu {
     Write-Host ""
 }
 
-# ---------- Shared: pick one script from numbered list ----------
-function pickScript {
+# ---------- Shared: pick one script from numbered list (loops until valid or q) ----------
+function pickScript
+{
     param([string]$prompt)
-    $sel = Read-Host $prompt
-    if ($sel -eq "q" -or $sel -eq "Q") { return $null }
-    $num = 0
-    if (-not [int]::TryParse($sel, [ref]$num) -or $num -lt 1 -or $num -gt $scripts.Count) {
-        Write-Host "Invalid selection: $sel" -ForegroundColor Red
-        return $null
+    while ($true)
+    {
+        $sel = (Read-Host $prompt).Trim()
+        if ($sel -eq "q" -or $sel -eq "Q")
+        {
+            return $null
+        }
+        $num = 0
+        if ([int]::TryParse($sel, [ref]$num) -and $num -ge 1 -and $num -le $scripts.Count)
+        {
+            return $scripts[$num - 1]
+        }
+        Write-Host "  Invalid selection: '$sel' (enter 1-$($scripts.Count) or q)" -ForegroundColor Red
     }
-    return $scripts[$num - 1]
 }
 
 # ==========================================================
 #  BENCHMARK MODE
 # ==========================================================
-if ($Benchmark) {
+if ($Benchmark)
+{
     $BenchScript = Join-Path $RepoRoot "benchmark\run_benchmark.ps1"
-    if (-not (Test-Path $BenchScript)) {
+    if (-not (Test-Path $BenchScript))
+    {
         Write-Error "Benchmark script not found: $BenchScript"
         exit 1
     }
 
+    Set-GpuPowerLimit
     showMenu $scripts
 
-    Write-Host "  Benchmark: pick 1–4 configs (comma-separated, in run order)" -ForegroundColor Cyan
+    Write-Host "  Benchmark: pick 1-4 configs (comma-separated, in run order)" -ForegroundColor Cyan
     Write-Host "  Example: 1,4,9   or   1, 4, 3, 9" -ForegroundColor DarkGray
     Write-Host ""
 
-    $raw = Read-Host "  Select [1-$($scripts.Count)]"
-    if ($raw -eq "q" -or $raw -eq "Q") { exit 0 }
+    $raw = (Read-Host "  Select [1-$($scripts.Count)]").Trim()
+    if ($raw -eq "q" -or $raw -eq "Q")
+    {
+        return 0
+    }
 
     # Parse comma-separated indices
     $benchScripts = @()
-    foreach ($token in ($raw -split ",")) {
+    foreach ($token in ($raw -split ","))
+    {
         $t = $token.Trim()
-        if ($t -eq "") { continue }
+        if ($t -eq "")
+        {
+            continue
+        }
         $num = 0
-        if (-not [int]::TryParse($t, [ref]$num) -or $num -lt 1 -or $num -gt $scripts.Count) {
+        if (-not [int]::TryParse($t, [ref]$num) -or $num -lt 1 -or $num -gt $scripts.Count)
+        {
             Write-Host "  Invalid index: '$t'" -ForegroundColor Red
             exit 1
         }
@@ -268,18 +362,21 @@ if ($Benchmark) {
     }
 
     $count = $benchScripts.Count
-    if ($count -eq 0) {
+    if ($count -eq 0)
+    {
         Write-Host "  No valid selections." -ForegroundColor Red
         exit 1
     }
-    if ($count -gt 4) {
+    if ($count -gt 4)
+    {
         Write-Host "  Max 4 configs allowed (got $count)." -ForegroundColor Red
         exit 1
     }
 
     Write-Host ""
     Write-Host "  Will benchmark $count config$(if ($count -gt 1) {'s'}):" -ForegroundColor Green
-    foreach ($bp in $benchScripts) {
+    foreach ($bp in $benchScripts)
+    {
         Write-Host "    - $([System.IO.Path]::GetFileNameWithoutExtension($bp))" -ForegroundColor Cyan
     }
     Write-Host ""
@@ -287,19 +384,18 @@ if ($Benchmark) {
     Write-Host "    [1] Standard      (~150 tok short prompts)" -ForegroundColor DarkCyan
     Write-Host "    [2] LongCtx       (~125K tok prefill per prompt)" -ForegroundColor DarkCyan
     Write-Host "    [3] Coding Quality (PowerShell, static analysis scoring)" -ForegroundColor DarkCyan
-    $promptChoice = Read-Host "  Select [1-3]"
+    $promptChoice = (Read-Host "  Select [1-3]").Trim()
     Write-Host ""
 
     # Launch orchestrator with MaxTokens passthrough
     $mtArg = if ($MaxTokens) { @("-MaxTokens", $MaxTokens) } else { @() }
-    if ($promptChoice -eq "2") {
-        & $BenchScript -Scripts $benchScripts -LongCtx @mtArg
-    } elseif ($promptChoice -eq "3") {
-        & $BenchScript -Scripts $benchScripts -Quality -Runs 1 @mtArg
-    } else {
-        & $BenchScript -Scripts $benchScripts @mtArg
+    switch ($promptChoice)
+    {
+        "2" { & $BenchScript -Scripts $benchScripts -LongCtx @mtArg }
+        "3" { & $BenchScript -Scripts $benchScripts -Quality -Runs 1 @mtArg }
+        default { & $BenchScript -Scripts $benchScripts @mtArg }
     }
-    exit 0
+    return 0
 }
 
 # ==========================================================
@@ -307,14 +403,17 @@ if ($Benchmark) {
 # ==========================================================
 
 # ---------- Rerun: replay last selection ----------
-if ($Rerun) {
-    if (-not (Test-Path $LastRunFile)) {
+if ($Rerun)
+{
+    if (-not (Test-Path $LastRunFile))
+    {
         Write-Host "No previous selection found. Run interactively first." -ForegroundColor Red
         exit 1
     }
     $last = Get-Content $LastRunFile -Raw | ConvertFrom-Json
     $chosen = $scripts | Where-Object { $_.FileName -eq $last.fileName } | Select-Object -First 1
-    if (-not $chosen) {
+    if (-not $chosen)
+    {
         Write-Host "Last script '$($last.fileName)' no longer exists in $RunDir" -ForegroundColor Red
         exit 1
     }
@@ -324,19 +423,24 @@ if ($Rerun) {
     Write-Host "  Script: $($chosen.Path)" -ForegroundColor Cyan
     Write-Host ""
 
+    Set-GpuPowerLimit
     & $chosen.Path
-    exit 0
+    return 0
 }
 
 showMenu $scripts
 
-if ($List) { exit 0 }
+if ($List)
+{
+    return 0
+}
 
 # ---------- Prompt for selection ----------
 $chosen = pickScript "  Select configuration [1-$($scripts.Count)]"
-if (-not $chosen) {
+if (-not $chosen)
+{
     Write-Host "Cancelled." -ForegroundColor Yellow
-    exit 0
+    return 0
 }
 
 # ---------- Save selection for -Rerun ----------
@@ -349,4 +453,5 @@ Write-Host "  Script:    $($chosen.Path)" -ForegroundColor Cyan
 Write-Host ""
 
 # ---------- Launch ----------
+Set-GpuPowerLimit
 & $chosen.Path
