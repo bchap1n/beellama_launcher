@@ -22,11 +22,8 @@ if (-not (Test-Path $ConfigPath))
 $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
 # ---------- Resolve base paths ----------
-$LmStudioModels   = [Environment]::ExpandEnvironmentVariables($Config.lmstudioModelsPath)
 $AltModelsPath    = "D:\.lmstudio\models"       # alternate drive (DeltaNet models, LuceBox drafts, jackrong models moved off C:)
-$ModelBase_Ardenzard = Join-Path $LmStudioModels "Ardenzard\Qwen3.6-27B-DFlash-GGUF"
 
-$ModelBase_Jackrong  = Join-Path $AltModelsPath "jackrong"
 $ModelBase_Ornith   = Join-Path $AltModelsPath "deepreinforce-ai"
 $ModelBase_Glimmer  = Join-Path $AltModelsPath "meta-models"
 $ModelBase_UnslothGlimmer = Join-Path $AltModelsPath "unsloth\meta-glimmer30b-gguf"  # Unsloth Dynamic 2.0 GGUFs (UD-Q4_K_XL 15.88GB, mmproj-kquant 1.40GB, dflash 1.63GB)
@@ -35,14 +32,8 @@ $ModelBase_Qwen38    = Join-Path $AltModelsPath "unsloth\qwen3.8-27B-gguf"
 # ---------- Model catalog ----------
 # Target models keyed by friendly name
 $Model = @{
-    # Jackrong Qwopus Coder (agentic coding fine-tune, Claude Opus trace inversion) — Compat-MTP on alt D:\jackrong
-    "Qwopus3.6-27B-Coder-Q5_K_M"     = "D:\.lmstudio\models\jackrong\Qwopus3.6-27B-Coder-Compat-MTP-GGUF\Qwopus3.6-27B-Coder-Compat-MTP-Q5_K_M.gguf"
-    # Qwopus Coder Compat-MTP (jackrong — for LuceBox; using MTP file)
-    "Qwopus3.6-27B-Coder-Q4_K_M-DeltaNet" = Join-Path $AltModelsPath "jackrong\Qwopus3.6-27B-Coder-Compat-MTP-GGUF\Qwopus3.6-27B-Coder-Compat-MTP-Q4_K_M.gguf"
     # deepreinforce-ai Ornith-1.0-35B (Qwen3.5 MoE, 40L, 256 experts, agentic coding RL)
     "Ornith-1.0-35B-Q4_K_M"    = Join-Path $ModelBase_Ornith "ornith-1.0-35b-Q4_K_M.gguf"
-    # Jackrong Qwopus 35B-A3B Coder MTP (MoE 35B/3B active, thinking-off agentic coding)
-    "Qwopus3.6-35B-A3B-Coder-Q4_K_M" = "D:\.lmstudio\models\jackrong\Qwopus3.6-35B-A3B-Coder-MTP-Q4_K_M.gguf"
     # Meta Muse Glimmer 30B — legacy KQuant path (D:\.lmstudio\models\meta-models, 15.61 GB) — kept as fallback
     # Dense 52L, 6656 hidden, 32Q/2KV, SWA 2048 [L,L,L,G] x13 = 39 local + 13 global, RoPE theta 500k, 131072 ctx, vocab 202k
     "Muse-Glimmer-30B-KQuant-17GB" = Join-Path $ModelBase_Glimmer "muse-glimmer-30B-kquant-17gb.gguf"
@@ -57,9 +48,6 @@ $Model = @{
 
 # DFlash draft models (Ardenzard GGUFs for beellama.cpp DFlash)
 $Drafter = @{
-    "DFlash-IQ4_XS" = Join-Path $ModelBase_Ardenzard "Qwen3.6-27B-DFlash-IQ4_XS.gguf"
-    # LuceBox Qwen3.6-27B DFlash draft (non-MTP, for use with unsloth/Qwen3.6-27B-GGUF)
-    "LuceBox-Qwen-DFlash" = Join-Path $AltModelsPath "Lucebox\Qwen3.6-27B-DFlash-GGUF\dflash-draft-3.6-q4_k_m.gguf"
     # Muse Glimmer DFlash — Unsloth Dynamic 2.0 (1.63GB dflash-kquant.gguf)
     "Glimmer-DFlash" = Join-Path $ModelBase_UnslothGlimmer "dflash-kquant.gguf"
     # KVFlash scorer (Qwen3-0.6B) for chunk ranking in long-context paging
@@ -68,7 +56,6 @@ $Drafter = @{
 
 # Multimodal projectors
 $MmprojLookup = @{
-    "Coder-F32"     = Join-Path $ModelBase_Jackrong "Qwopus3.6-27B-Coder-Compat-MTP-GGUF\mmproj-F32.gguf"
     "Ornith-bf16"   = Join-Path $ModelBase_Ornith   "mmproj-deepreinforce-ai_Ornith-1.0-35B-bf16.gguf"
     "Qwen38-BF16"   = Join-Path $ModelBase_Qwen38 "mmproj-BF16.gguf"
     "Glimmer"       = Join-Path $ModelBase_UnslothGlimmer "mmproj-kquant.gguf"
