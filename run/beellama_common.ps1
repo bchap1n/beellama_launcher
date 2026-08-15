@@ -43,7 +43,11 @@ $Model = @{
     "Muse-Glimmer-30B-UD-Q3_K_XL" = Join-Path $ModelBase_UnslothGlimmer "Muse-Glimmer-30B-UD-Q3_K_XL.gguf"
     "Muse-Glimmer-30B-UD-Q2_K_XL" = Join-Path $ModelBase_UnslothGlimmer "Muse-Glimmer-30B-UD-Q2_K_XL.gguf"
     # Qwen3.8-27B (Unsloth, hybrid thinking + vision, 256K native ctx, MTP head in GGUF)
+    #   Q4_K_M = standard 4-bit base (13-19 GB class); Q4_K_S = smaller 4-bit (vision/large-ctx budget);
+    #   UD-Q4_K_XL = flagship Unsloth Dynamic 2.0 quant (highest fidelity 4-bit, ~16.7 GB)
     "Qwen3.8-27B-Q4_K_M"         = Join-Path $ModelBase_Qwen38 "Qwen3.8-27B-Q4_K_M.gguf"
+    "Qwen3.8-27B-Q4_K_S"         = Join-Path $ModelBase_Qwen38 "Qwen3.8-27B-Q4_K_S.gguf"
+    "Qwen3.8-27B-UD-Q4_K_XL"     = Join-Path $ModelBase_Qwen38 "Qwen3.8-27B-UD-Q4_K_XL.gguf"
 }
 
 # DFlash draft models (Ardenzard GGUFs for beellama.cpp DFlash)
