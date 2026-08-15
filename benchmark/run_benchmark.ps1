@@ -692,25 +692,87 @@ if ($qualityMode) {
     }
 }
 
-# ---------- DeepSeek analysis ----------
+# ---------- DeepSeek analysis (0731 Flash / V3.1) ----------
 $analysisHtml = ""
 $dsKey = if ($env:DEEPSEEK_API_KEY) { $env:DEEPSEEK_API_KEY } else { [Environment]::GetEnvironmentVariable("DEEPSEEK_API_KEY","User") }
 if ($dsKey) {
     Write-Host ""
-    Write-Host "  Running DeepSeek analysis..." -ForegroundColor Cyan
+    Write-Host "  Running DeepSeek analysis (0731 Flash)..." -ForegroundColor Cyan
     try {
         $anaPrompt = Get-Content (Join-Path $BenchDir "prompts-analysis.json") -Raw | ConvertFrom-Json
-        # Build data summary
+        # Ensure Extract-Code is available for inline AST (quality_analysis may not have been loaded if qualityMode is off)
+        if (-not (Get-Command Extract-Code -ErrorAction SilentlyContinue)) {
+            $qaPath = Join-Path $BenchDir "quality_analysis.ps1"
+            if (Test-Path $qaPath) { . $qaPath }
+        }
+        # Build prompt map for descriptions + expected checks
+        $promptMapLocal = @{}
+        foreach ($p in $prompts) { $promptMapLocal[$p.name] = $p }
+
+        # Inline AST helpers (light copy of postpass.ps1) - granular truth without requiring postpass file
+        function Get-FunctionAstInline { param($Ast, [string]$Name) $Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { -not $Name -or $_.Name -eq $Name } }
+        function Test-CmdletBindingInline { param($Func) if ($Func.Body.ParamBlock) { foreach ($a in $Func.Body.ParamBlock.Attributes) { if ($a.TypeName.Name -eq "CmdletBinding") { return $true } } } ; return $false }
+        function Test-TypedParamsInline { param($Func) if (-not $Func.Body.ParamBlock) { return $false } ; foreach ($prm in $Func.Body.ParamBlock.Parameters) { if ($prm.StaticType -and $prm.StaticType.Name -ne "Object") { return $true } ; if ($prm.Attributes.Count -gt 0) { return $true } } ; return $false }
+        function Test-TryCatchInline { param($Ast) ($Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.TryStatementAst] }, $true).Count -gt 0) }
+        function Test-BeginProcessEndInline { param($Func) [bool]($Func.Body.BeginBlock -or $Func.Body.ProcessBlock -or $Func.Body.EndBlock) }
+        function Test-PipelineInputInline { param($Func) if (-not $Func.Body.ParamBlock) { return $false } ; foreach ($prm in $Func.Body.ParamBlock.Parameters) { foreach ($attr in $prm.Attributes) { if ($attr.TypeName.Name -match 'Parameter') { foreach ($na in $attr.NamedArguments) { if ($na.ArgumentName -match 'ValueFromPipeline') { return $true } } } } } ; return $false }
+        function Test-ShouldProcessInline { param($Func) $attr = $Func.Body.ParamBlock.Attributes | Where-Object { $_.TypeName.Name -eq "CmdletBinding" } | Select-Object -First 1; if ($attr) { foreach ($na in $attr.NamedArguments) { if ($na.ArgumentName -eq "SupportsShouldProcess") { return $true } } } ; return $false }
+        function Test-CommandUsageInline { param($Ast, [string]$Pat) $cmds = $Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true); foreach ($c in $cmds) { $n = $c.GetCommandName(); if ($n -and $n -match $Pat) { return $true } } ; return $false }
+        function Test-ForEachParallelInline { param($Ast) $cmds = $Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true); foreach ($c in $cmds) { if ($c.Extent.Text -match 'ForEach-Object\s+-Parallel') { return $true } } ; return $false }
+        function Test-CommentHelpInline { param($Ast) if ($Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommentHelpInfo] }, $true).Count -gt 0) { return $true } ; return ($Ast.Extent.Text -match '<#.*\.SYNOPSIS') }
+
+        function Get-InlineAstSummary {
+            param([string]$Code, $PromptDef)
+            $expected = if ($PromptDef.expected) { $PromptDef.expected } else { $null }
+            if (-not $expected) { return [PSCustomObject]@{ Passed=0; Total=0; Details=@(); Pct=0; Summary="no expected checks"; ParseOk=$true } }
+            $t = $null; $e = $null; $ast = [System.Management.Automation.Language.Parser]::ParseInput($Code, [ref]$t, [ref]$e)
+            $passed = 0; $total = 0; $details = @()
+            foreach ($prop in $expected.PSObject.Properties) {
+                $key = $prop.Name; $want = $prop.Value; $total++
+                $got = $false; $detail = ""
+                switch ($key) {
+                    "hasCmdletBinding" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs | Where-Object { Test-CmdletBindingInline $_ }).Count -gt 0; $detail = if ($got) { "has CmdletBinding" } else { "missing CmdletBinding" } }
+                    "hasTypedParams" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs | Where-Object { Test-TypedParamsInline $_ }).Count -gt 0; $detail = if ($got) { "has typed params" } else { "missing typed params" } }
+                    "hasTryCatch" { $got = Test-TryCatchInline $ast; $detail = if ($got) { "has try/catch" } else { "missing try/catch" } }
+                    "functionName" { $funcs = Get-FunctionAstInline $ast $want; $got = ($funcs.Count -gt 0); $detail = if ($got) { "function $want present" } else { "function $want missing" } }
+                    "hasBeginProcessEnd" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs | Where-Object { Test-BeginProcessEndInline $_ }).Count -gt 0; $detail = if ($got) { "has begin/process/end" } else { "missing begin/process/end" } }
+                    "hasPipelineInput" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs | Where-Object { Test-PipelineInputInline $_ }).Count -gt 0; $detail = if ($got) { "has ValueFromPipeline" } else { "missing ValueFromPipeline" } }
+                    "usesInvokeRestMethod" { $got = Test-CommandUsageInline $ast "Invoke-RestMethod"; $detail = if ($got) { "uses Invoke-RestMethod" } else { "missing Invoke-RestMethod" } }
+                    "hasShouldProcess" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs | Where-Object { Test-ShouldProcessInline $_ }).Count -gt 0; $detail = if ($got) { "has SupportsShouldProcess" } else { "missing SupportsShouldProcess" } }
+                    "hasExportModuleMember" { $got = Test-CommandUsageInline $ast "Export-ModuleMember"; $detail = if ($got) { "has Export-ModuleMember" } else { "missing Export-ModuleMember" } }
+                    "hasTwoFunctions" { $funcs = Get-FunctionAstInline $ast; $got = ($funcs.Count -ge 2); $detail = "functions=$($funcs.Count)/2" }
+                    "hasCommentHelp" { $got = Test-CommentHelpInline $ast; $detail = if ($got) { "has comment help" } else { "missing comment help" } }
+                    "usesPipelineCmdlets" { $got = (Test-CommandUsageInline $ast "Import-Csv") -or (Test-CommandUsageInline $ast "Group-Object") -or (Test-CommandUsageInline $ast "ForEach-Object"); $detail = if ($got) { "uses pipeline cmdlets" } else { "missing pipeline cmdlets" } }
+                    "handlesWeekends" { $got = ($Code -match 'Saturday|Sunday|DayOfWeek'); $detail = if ($got) { "handles weekends" } else { "missing weekend logic" } }
+                    "handlesMissing" { $got = ($Code -match '\$null|return\s+\$null'); $detail = if ($got) { "handles missing key" } else { "missing null-return" } }
+                    "handlesMissingFile" { $got = ($Code -match 'Test-Path|New-Item'); $detail = if ($got) { "handles missing file" } else { "missing file check" } }
+                    "usesForEachParallel" { $got = Test-ForEachParallelInline $ast; $detail = if ($got) { "has ForEach-Object -Parallel" } else { "missing -Parallel" } }
+                    default { $detail = "unknown:$key"; $got = $false }
+                }
+                if ($got -eq $want) { $passed++ }
+                $details += $detail
+            }
+            $pct = if ($total -gt 0) { [math]::Round($passed/$total*100) } else { 0 }
+            return [PSCustomObject]@{ Passed=$passed; Total=$total; Pct=$pct; Details=$details; ParseOk=($e.Count -eq 0) }
+        }
+
+        # Build rich per-config + per-area summary for STE100 analysis
         $data = @()
+        $data += "HARNESS: OMP on RTX 3090 24GB. OMP production can LSP-fix style after generation -- weight AST/PSA over idiom. Do not treat reported idiom% as post-LSP. QA idiom% is scored on raw output before LSP (postpass Phase 2 is diagnostics only). Weight AST structural + PSA above idiom. Most models score 78-83 idiom and 7-8/10 AST -- differentiate by per-area AST detail below."
+
         foreach ($cfg in $configs) {
             $cs = $configStats | Where-Object { $_.Config -eq $cfg }
             $cfgCoding = @($codingResults | Where-Object { $_.Config -eq $cfg })
             $aGrd = if ($cfgCoding) { ($cfgCoding | Where-Object { $_.QAGrade -eq "A" }).Count } else { 0 }
             $syn  = if ($cfgCoding) { ($cfgCoding | Where-Object { $_.QASyntaxOk }).Count } else { 0 }
             $avg  = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAIdiomScore -Average).Average, 1) } else { 0 }
-            $data += "  $cfg | $($cs.Median) tok/s | idiom $($avg)% | syntax $syn/$($cfgCoding.Count) | A-grades $aGrd/$($cfgCoding.Count)"
-
-            # Check for post-pass AST results (may have run in a prior phase)
+            $minIdiom = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAIdiomScore -Minimum).Minimum,1) } else { 0 }
+            $maxIdiom = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAIdiomScore -Maximum).Maximum,1) } else { 0 }
+            $avgPsaE = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAPSAErrors -Average).Average,1) } else { 0 }
+            $avgPsaW = if ($cfgCoding.Count -gt 0) { [math]::Round(($cfgCoding | Measure-Object -Property QAPSAWarnings -Average).Average,1) } else { 0 }
+            $data += ""
+            $data += "CONFIG: $cfg | $($cs.Median) tok/s median (mean $($cs.Mean) sustained $($cs.Sustained) sd $($cs.StdDev)) TTFT $($cs.MedianTTFT)ms"
+            $data += "  OVERALL: idiom avg $($avg)% range ${minIdiom}-${maxIdiom} | syntax $syn/$($cfgCoding.Count) | A-grades $aGrd/$($cfgCoding.Count) | PSA avg err $avgPsaE warn $avgPsaW"
             $astFile = Join-Path $OutputDir "postpass\ast_validation.json"
             if (Test-Path $astFile) {
                 try {
@@ -720,14 +782,69 @@ if ($dsKey) {
                     if ($cfgAst.Count -gt 0) {
                         $astPct = [math]::Round(($cfgAst | Measure-Object -Property ChecksPassed -Sum).Sum / [math]::Max(1, ($cfgAst | Measure-Object -Property ChecksTotal -Sum).Sum) * 100, 1)
                         $parseOk = ($cfgAst | Where-Object { $_.ParseOk }).Count
-                        $data += "    -> AST structural: $astPct% ($($cfgAst | Measure-Object -Property ChecksPassed -Sum).Sum/$($cfgAst | Measure-Object -Property ChecksTotal -Sum).Sum checks), parse OK: $parseOk/$($cfgAst.Count)"
-                        # Per-prompt detail for failed prompts
-                        $failed = @($cfgAst | Where-Object { $_.ChecksPassed -lt $_.ChecksTotal })
-                        if ($failed.Count -gt 0) {
-                            $data += "    -> Failed prompts: $(($failed | ForEach-Object { "$($_.Prompt) ($($_.ChecksPassed)/$($_.ChecksTotal))" }) -join ", ")"
-                        }
+                        $data += "  AST STRUCTURAL (postpass): $astPct% ($($cfgAst | Measure-Object -Property ChecksPassed -Sum).Sum/$($cfgAst | Measure-Object -Property ChecksTotal -Sum).Sum checks) parse OK $parseOk/$($cfgAst.Count)"
                     }
                 } catch { }
+            } else {
+                $inlineTotals = @()
+                foreach ($r in $cfgCoding) {
+                    $code = try { Extract-Code $r.Content } catch { $r.Content }
+                    $pd = $promptMapLocal[$r.Prompt]
+                    if ($pd) { $inlineTotals += Get-InlineAstSummary -Code $code -PromptDef $pd }
+                }
+                if ($inlineTotals.Count -gt 0) {
+                    $sumP = ($inlineTotals | ForEach-Object { $_.Passed } | Measure-Object -Sum).Sum
+                    $sumT = ($inlineTotals | ForEach-Object { $_.Total } | Measure-Object -Sum).Sum
+                    $inlinePct = if ($sumT -gt 0) { [math]::Round($sumP/$sumT*100,1) } else { 0 }
+                    $data += "  AST STRUCTURAL (inline): $inlinePct% ($sumP/$sumT checks)"
+                }
+            }
+            $data += "  PER-AREA (10 areas):"
+            foreach ($pn in $promptNames) {
+                $pResults = @($codingResults | Where-Object { $_.Config -eq $cfg -and $_.Prompt -eq $pn })
+                if ($pResults.Count -eq 0) { $data += "    - ${pn}: no data"; continue }
+                $avgIdiomArea = [math]::Round(($pResults | Measure-Object -Property QAIdiomScore -Average).Average,1)
+                $gradeMode = ($pResults | Group-Object QAGrade | Sort-Object Count -Descending | Select-Object -First 1).Name
+                $synOkArea = ($pResults | Where-Object { $_.QASyntaxOk }).Count
+                $psaEArea = ($pResults | Measure-Object -Property QAPSAErrors -Sum).Sum
+                $psaWArea = ($pResults | Measure-Object -Property QAPSAWarnings -Sum).Sum
+                $medTokArea = getMedian @($pResults | ForEach-Object { $_.DecodeTokPerSec })
+                $medTtftArea = getMedian @($pResults | ForEach-Object { [double]$_.TTFT_Ms })
+                $desc = if ($promptMapLocal[$pn] -and $promptMapLocal[$pn].description) { $promptMapLocal[$pn].description } else { $pn }
+                $areaPassed = 0; $areaTotal = 0; $areaPct = 0; $areaAstDetails = @()
+                $postAstForPrompt = $null
+                if (Test-Path $astFile) {
+                    try {
+                        $astData2 = Get-Content $astFile -Raw | ConvertFrom-Json
+                        if ($astData2 -isnot [array]) { $astData2 = @($astData2) }
+                        $postAstForPrompt = @($astData2 | Where-Object { $_.Config -eq $cfg -and $_.Prompt -eq $pn })
+                    } catch {}
+                }
+                if ($postAstForPrompt -and $postAstForPrompt.Count -gt 0) {
+                    $areaPassed = ($postAstForPrompt | ForEach-Object { $_.ChecksPassed } | Measure-Object -Sum).Sum
+                    $areaTotal  = ($postAstForPrompt | ForEach-Object { $_.ChecksTotal } | Measure-Object -Sum).Sum
+                    $areaPct = if ($areaTotal -gt 0) { [math]::Round($areaPassed/$areaTotal*100) } else { 0 }
+                    $failedDetails = @($postAstForPrompt | ForEach-Object { $_.CheckDetails } | Where-Object { -not $_.Passed } | ForEach-Object { $_.Detail })
+                    $okDetails = @($postAstForPrompt | ForEach-Object { $_.CheckDetails } | Where-Object { $_.Passed } | ForEach-Object { $_.Detail })
+                    if ($okDetails.Count -gt 0) { $areaAstDetails += ($okDetails -join ", ") }
+                    if ($failedDetails.Count -gt 0) { $areaAstDetails += "FAIL: " + ($failedDetails -join ", ") }
+                } else {
+                    $summaries = @()
+                    foreach ($r in $pResults) {
+                        $code2 = try { Extract-Code $r.Content } catch { $r.Content }
+                        $pd2 = $promptMapLocal[$pn]
+                        if ($pd2) { $summaries += Get-InlineAstSummary -Code $code2 -PromptDef $pd2 }
+                    }
+                    if ($summaries.Count -gt 0) {
+                        $areaPassed = [math]::Round(($summaries | ForEach-Object { $_.Passed } | Measure-Object -Average).Average,1)
+                        $areaTotal  = ($summaries | Select-Object -First 1).Total
+                        $areaPct = if ($areaTotal -gt 0) { [math]::Round($areaPassed/$areaTotal*100) } else { 0 }
+                        $allDetails = @($summaries | ForEach-Object { $_.Details }) | ForEach-Object { $_ }
+                        $areaAstDetails = $allDetails | Select-Object -Unique
+                    }
+                }
+                $astStr = if ($areaTotal -gt 0) { "AST $areaPassed/$areaTotal ($areaPct%) [" + ($areaAstDetails -join "; ") + "]" } else { "AST n/a" }
+                $data += "    - $pn ($desc): idiom ${avgIdiomArea}% grade $gradeMode syntax $synOkArea/$($pResults.Count) PSA $psaEArea/$psaWArea tok $medTokArea TTFT ${medTtftArea}ms | $astStr"
             }
         }
         $isCompare = $configs.Count -gt 1
@@ -736,12 +853,16 @@ if ($dsKey) {
         $body = $anaPrompt.$templateKey -f ($data -join "`n"), $extra, $configs.Count
 
         $headers = @{ "Authorization" = "Bearer $dsKey"; "Content-Type" = "application/json" }
-        $payload = @{ model = "deepseek-chat"; messages = @(@{role="system";content=$anaPrompt.system},@{role="user";content=$body}); max_tokens=500; temperature=0.3 } | ConvertTo-Json
-        $resp = Invoke-RestMethod -Uri "https://api.deepseek.com/v1/chat/completions" -Method Post -Headers $headers -Body $payload -TimeoutSec 30
-        $verdict = $resp.choices[0].message.content.Trim()
-        Write-Host "  DeepSeek analysis:" -ForegroundColor Green
+        # DeepSeek 0731 Flash = deepseek-v4-flash (V4-Flash-0731) per official docs, superior to v4-pro on code verdicts
+        # thinking disabled: Flash defaults thinking ON and burns max_tokens in reasoning, leaving content empty
+        $payload = @{ model = "deepseek-v4-flash"; messages = @(@{role="system";content=$anaPrompt.system},@{role="user";content=$body}); max_tokens=2500; temperature=0.2; thinking = @{ type = "disabled" } } | ConvertTo-Json -Depth 5
+        $resp = Invoke-RestMethod -Uri "https://api.deepseek.com/v1/chat/completions" -Method Post -Headers $headers -Body $payload -TimeoutSec 90
+        $rawVerdict = $resp.choices[0].message.content
+        if (-not $rawVerdict -or $rawVerdict.Trim().Length -eq 0) { $rawVerdict = $resp.choices[0].message.reasoning_content }
+        $verdict = $rawVerdict.Trim()
+        Write-Host "  DeepSeek analysis (deepseek-v4-flash, thinking disabled):" -ForegroundColor Green
         $verdict -split "`n" | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-        $analysisHtml = "<div class='section'>deepseek analysis</div><div class='analysis-text'>" + ($verdict -replace "`n","<br>") + "</div>"
+        $analysisHtml = "<div class='section'>deepseek analysis // deepseek-v4-flash</div><div class='analysis-text'>" + ($verdict -replace "`n","<br>") + "</div>"
     } catch {
         Write-Warning "  DeepSeek analysis failed: $_"
         $analysisHtml = "<div class='section'>deepseek analysis</div><p class='dim'>Analysis unavailable: $_</p>"
